@@ -19,22 +19,36 @@ gitignored there, so the product repo stays clean:
 
 ```bash
 cd /path/to/file-management-server
-git clone git@github.com:faakhir-habib/thportal-guardrails.git .claude/guardrails
-node .claude/guardrails/install.mjs
+git clone https://github.com/faakhir-habib/thportal-guardrails.git .claude/guardrails
+bash .claude/guardrails/scripts/sync-local.sh
 ```
 
-Updating is `git -C .claude/guardrails pull` followed by the same install command.
+`sync-local.sh` copies the agent, the skill and the two `CLAUDE.md` files into the paths Claude Code
+reads (`.claude/agents/`, `.claude/skills/`, `CLAUDE.md`, `backend/CLAUDE.md`). Restart Claude Code
+afterwards — a new agent or skill is only registered at startup.
+
+Then hide the two `CLAUDE.md` files from git, once per clone:
+
+```bash
+printf '\n/CLAUDE.md\n/backend/CLAUDE.md\n' >> .git/info/exclude
+```
+
+Updating is `git -C .claude/guardrails pull` followed by the same sync command.
 
 ## What it gives you
 
-| Command | What it does |
-|---|---|
-| `/ticket <asana-url>` | Reads the ticket, sets up the branch, writes the QA cases and the plan, waits for approval |
-| `/validate` | Format, build, the integration suite, an architecture review of the staged diff, and the QA cases over real HTTP — then stamps the exact staged tree |
-| `/ship` | Reviews the whole branch, pushes, opens the PR, verifies on the preview env, comments on the ticket and tags QA |
-| `/learn` | Turns a lesson (a review comment, a QA failure, a correction) into a rule so it cannot happen again |
+**Working today:**
 
-A git hook blocks any commit that touches `backend/` without a valid validation stamp.
+| What | Effect |
+|---|---|
+| `rules/backend-rules.md` | The single source of backend rules — layers, versioning, soft delete, audit logging, EF and migrations, DTOs, frontend sync, naming, DRY/SRP/LSP, security, quality, tests. Every rule carries a severity and a golden example |
+| `CLAUDE.md` | Imports those rules, so they are in context while code is being written |
+| `architecture-reviewer` | A read-only subagent that reviews a diff and returns JSON |
+| `/thportal-review <PR>` or `--local` | Reviews a pull request, or the staged/branch diff, against the rules |
+
+**Still to come** — `/ticket`, `/validate`, `/ship`, `/learn`, the git hook that blocks a commit
+without a validation stamp, and the installer that replaces `sync-local.sh`. Until then: review with
+`/thportal-review --local` before committing, and do the Asana and QA steps by hand.
 
 ## Requirements
 
@@ -46,12 +60,12 @@ A git hook blocks any commit that touches `backend/` without a valid validation 
 
 ```
 rules/          the single source of backend rules
-skills/         /ticket, /validate, /ship, /learn, pr-review
+skills/         /thportal-review (more to come)
 agents/         the read-only architecture reviewer
-githooks/       the commit gate
-scripts/        checks, stamps, secrets, Asana and GitHub calls
+scripts/        sync-local.sh, until the installer replaces it
 claude/         the CLAUDE.md files copied into the product clone
-docs/design.md  the full design
+eval/           the fixtures the reviewer is measured against
+docs/           design.md and the implementation plans
 ```
 
-Status: design complete, implementation in progress.
+Status: rules, reviewer and review skill are in place and proven against the eval fixtures. Version 0.2.0 — see CHANGELOG.md.
