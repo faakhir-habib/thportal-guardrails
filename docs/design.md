@@ -55,8 +55,8 @@ AI has made development fast, and three things have broken along the way:
 
 | Topic | Decision |
 |---|---|
-| Delivery | A local bundle installed inside each developer's clone; nothing is committed |
-| Distribution | The owner sends the bundle by hand to a developer who wants it |
+| Delivery | A bundle installed inside each developer's clone at `.claude/guardrails`; nothing is committed to the product repo |
+| Distribution | Its own private repo, `faakhir-habib/thportal-guardrails`, cloned into that path; the owner invites collaborators |
 | Rollout | Stage 1 owner's pilot → Stage 2 hand it to individual developers. Committing it to the repo and adding CI stays off the table until the user decides otherwise |
 | Rules | One file per side; `CLAUDE.md`, the reviewer and the PR review skill all read it |
 | Commit gate | Hard block on every commit, Claude or human |
@@ -76,7 +76,7 @@ AI has made development fast, and three things have broken along the way:
 
 ### Files
 
-Everything lives inside the clone but outside git's view. `.claude/` is already gitignored; the three
+Everything lives inside the clone but outside git's view. `.claude/` is already gitignored; the two
 `CLAUDE.md` files are hidden per clone through `.git/info/exclude`, which the installer writes.
 
 ```
@@ -85,7 +85,7 @@ backend/CLAUDE.md                            imports the backend rules
 .claude/
   settings.json                              Claude Code hooks + attribution off
   agents/architecture-reviewer.md            read-only review subagent
-  skills/thportal-ticket|validate|ship|learn|pr-review/SKILL.md
+  skills/thportal-ticket|validate|ship|learn|review/SKILL.md
   guardrails/
     rules/backend-rules.md                   the single source of backend rules
     config.json                              non-secret config (Asana GIDs, Aqil, categories, preview URLs)
@@ -129,8 +129,11 @@ Rule catalogue:
 - **API versioning** — new controllers under `Controllers/V2/` with a matching namespace; new
   functionality does not go onto v1 controllers.
 - **Soft-delete and active-status filtering** — every new or changed read query filters
-  `IsActive` / `IsDeleted` / `Discontinued` (and variants) unless a global query filter covers it or
-  the method name states the intent; `IgnoreQueryFilters()` needs a justification.
+  `IsActive` / `IsDeleted` / `Discontinued` (and variants) unless the method name states that
+  inactive rows are wanted. **There are no EF global query filters anywhere in the solution**
+  (verified 2026-09-18: no `HasQueryFilter` in `RepositoryContext.cs` or the 62 files in
+  `Repository/Configuration/`), and 21 entities carry `IsDeleted`, so every filter is manual and a
+  missed one silently returns deleted rows.
 - **Schema and migrations** — entity changes ship with a migration; `Up`/`Down` are inverses; no
   unrelated drift; destructive changes are called out.
 - **DTOs** — no entities in controller signatures; mapping in services; suffix conventions.
@@ -139,12 +142,15 @@ Rule catalogue:
   frontend code quality.
 - **Naming** — C# conventions, project patterns (`Get*`, `Delete*`, `*Dto`, `Is*`), and domain
   terms; checked against how the codebase already names things.
-- **Audit logging:**
-  - every create, update, delete or status change calls
-    `ISystemActivityService.AddActivity` with a type constant added to `ActivityTypes` (no inline
-    strings);
-  - updates record old and new values of the changed fields in `AdditionalInfo`, as
-    `LotCriticalDatesService.LogSaveActivityAsync` does;
+- **Audit logging** (verified 2026-09-18):
+  - every create, update, delete or status change logs an activity, using a constant from
+    `Service/ActivityTypes.cs` — never an inline activity-type string;
+  - the modern shapes are `_systemActivityService.LogEntityAsync(ActivityTypes.X, entityId, ("Name",
+    value))` for the common case (`Service/Extensions/SystemActivityExtensions.cs`) and
+    `OnActivityAsync(ActivityTypes.X, info)` when the pairs are many or conditional
+    (`Service/LotCriticalDatesService.cs`). `ISystemActivityService.AddActivity` is legacy — only 4
+    file-system call sites use it, and new code must not;
+  - updates record the old and new values of the fields that changed;
   - entities that carry `CreatedBy`/`UpdatedBy` get them set, through one shared approach rather
     than another private helper (`SetUpdateAuditFields` and `UpdateAuditMetadata` already duplicate
     each other);
@@ -172,9 +178,10 @@ Rule catalogue:
   - `web_fetch` and "do not run git" → `gh` and `git`;
   - "backend only" stays as it is — the skill keeps reading frontend files for the DTO and endpoint
     sync checks, and reviews nothing else there.
-- The bundle carries the only copy the developer's Claude loads, at `.claude/skills/`. The tracked
-  `backend/.claude/skills/thportal-pr-review/SKILL.md` is left exactly as it is — it belongs to the
-  repo and is not ours to change.
+- **The bundle's skill is named `thportal-review`, not `thportal-pr-review`.** Two copies of the old
+  skill already sit in the clone — `backend/.claude/skills/thportal-pr-review/` (tracked) and
+  `.claude/skills/thportal-pr-review/` (untracked) — and neither is ours to change. A new name means
+  no shadowing and no doubt about which skill ran.
 
 ## 2. Workflow
 
@@ -430,26 +437,35 @@ nobody else sees.
 
 ### Propagation (manual, by design)
 
-- `/learn` edits the local rules immediately, so the developer's very next validation uses the new
-  rule.
-- It also appends the lesson to `.claude/guardrails/learnings-outbox.md`: what was learned, why, the
-  PR or ticket that taught it, and the exact rule text.
-- **The owner holds the master bundle.** Developers send their outbox entries back; the owner merges
-  them, bumps `VERSION`, records the change in `CHANGELOG.md`, and re-sends the bundle.
-- On install, an existing bundle is upgraded in place: rules, skills, hooks and scripts are replaced;
-  `work/`, the outbox and the stamps are kept.
+- `/learn` edits `rules/backend-rules.md` in the guardrails clone immediately, so the developer's
+  very next validation uses the new rule.
+- The guardrails clone is a git repo of its own, so the lesson is committed there —
+  `chore(rules): …`, with the PR or ticket that taught it in the body — and pushed on a branch for
+  the owner to merge. The product repo is not touched by any of this.
+- The owner merges, bumps `VERSION` and records the change in `CHANGELOG.md`. Everyone else picks it
+  up with `git -C .claude/guardrails pull`.
+- A developer without push access to the bundle repo falls back to
+  `.claude/guardrails/learnings-outbox.md` and sends the entry to the owner.
 - A rules change alters `rulesHash`, so existing stamps become invalid and code is revalidated
   against the new rule.
 
 ## 5. Distribution
 
-The bundle is handed over by hand. Nothing is published, and nothing is added to the repo.
+The bundle lives in its own private repo, **`faakhir-habib/thportal-guardrails`**, and is cloned
+**inside** the product clone at `.claude/guardrails` — a path the product repo already gitignores.
+Nothing is added to the product repo.
 
-- **Build it:** `node .claude/guardrails/pack.mjs` writes `guardrails-<version>.zip` (the bundle
-  files only — never `work/`, stamps, tokens or the outbox) to the scratchpad.
-- **Send it:** the owner sends the zip to a developer who wants it.
-- **Install it:** the developer unzips it at the root of their clone and runs
-  `node .claude/guardrails/install.mjs`, which:
+```bash
+cd /path/to/file-management-server
+git clone https://github.com/faakhir-habib/thportal-guardrails.git .claude/guardrails
+node .claude/guardrails/install.mjs
+```
+
+- **Access:** the owner invites a developer as a collaborator when they are ready to use it.
+- **Updates:** `git -C .claude/guardrails pull`, then `install.mjs` again to re-sync the copied files.
+- **Offline fallback:** `node .claude/guardrails/pack.mjs` writes `guardrails-<version>.zip` (bundle
+  files only — never `work/`, stamps, tokens or the outbox) for a developer without repo access.
+- **Install:** `node .claude/guardrails/install.mjs`, which:
   - checks the prerequisites — `git`, Node, Docker, `gh`, and a reachable Asana token and GitHub PAT;
   - sets `core.hooksPath` to the bundle's hooks;
   - adds the `CLAUDE.md` files to `.git/info/exclude` so they never show up in `git status`;
@@ -459,8 +475,14 @@ The bundle is handed over by hand. Nothing is published, and nothing is added to
 - **Remove it:** `node .claude/guardrails/uninstall.mjs` restores the previous hooks path, removes
   the exclude entries and the bundle's own files, and leaves the repo exactly as it was.
 
-Every developer's copy is independent. Two developers can be on different versions, which is
-acceptable at this scale — the rules only get stricter, and the owner keeps the master.
+Two developers can sit on different commits of the bundle, which is acceptable at this scale — a
+`git pull` brings them level.
+
+**The skills, agents and `CLAUDE.md` files are copied** out of `.claude/guardrails/` into
+`.claude/skills/`, `.claude/agents/` and the two `CLAUDE.md` paths, because Claude Code only loads
+them from there. `githooks/`, `rules/` and `scripts/` are used straight from the clone, so a `pull`
+updates them with no copy step. `install.mjs` is what re-syncs the copied files, and it refuses to
+overwrite a file the developer has edited locally without saying so.
 
 ## 6. Rollout
 
@@ -511,6 +533,11 @@ first hit:
      `C:\Users\Administrator\.local\bws-token-personal.dpapi`, decrypted through PowerShell.
 2. **A system environment variable** with the same name (`ZAYAN_ASANA_TOKEN`, `ZAYAN_GITHUB_PAT`).
 3. **Neither found:** stop with the setup instructions.
+
+The bundle repo itself is a separate case: it lives on the personal account `faakhir-habib`, so
+pushing to it uses `FAAKHIR_GITHUB_PAT` from the Bitwarden **Pepflow.io** project (read with
+`bws-token-pepflow-shared.dpapi`), not the work `ZAYAN_GITHUB_PAT`. Git Credential Manager may
+already hold a working credential for it, in which case a plain `git push` is enough.
 
 Handling rules:
 
