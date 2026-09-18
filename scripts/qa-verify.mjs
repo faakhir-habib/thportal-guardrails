@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { inScope, parseCases, summarise } from './lib/qa-cases.mjs';
 import { runCases } from './lib/qa-verify-lib.mjs';
 import { branchConnectionString, login, startApi } from './lib/api-harness.mjs';
+import { startSqlContainer } from './lib/sql-container.mjs';
 import { repoRoot } from './lib/repo.mjs';
 
 const arg = (name) => {
@@ -32,17 +33,46 @@ if (scoped.length === 0) {
 }
 
 const givenBaseUrl = arg('base-url');
-const connectionString = arg('db') ?? branchConnectionString();
-const database = givenBaseUrl
-  ? `an API already running at ${givenBaseUrl}`
-  : (connectionString ? connectionString.replace(/Password=[^;]*/i, 'Password=***') : "the developer's local dev database");
+// A throwaway container is the default because the API migrates whatever database it is given, and
+// the developer's own database is not a safe thing to migrate on every QA run.
+const useContainer = !givenBaseUrl && !arg('db') && !process.argv.includes('--no-container');
 
 let api = null;
+let sql = null;
 let failed = 0;
 
 try {
+  let connectionString = arg('db') ?? branchConnectionString();
+  let database;
+
+  if (givenBaseUrl) {
+    database = `an API already running at ${givenBaseUrl}`;
+  } else if (connectionString) {
+    database = connectionString.replace(/Password=[^;]*/i, 'Password=***');
+  } else if (useContainer) {
+    sql = await startSqlContainer({ onProgress: (m) => process.stderr.write(`sql: ${m}\n`) });
+    connectionString = sql.connectionString;
+    database = 'a throwaway SQL Server container (guardrails_qa), migrated from empty';
+  } else {
+    database = "the API's own configured database";
+  }
+
   const baseUrl = givenBaseUrl ?? (api = await startApi({ connectionString })).baseUrl;
   process.stderr.write(`api: ${baseUrl}\ndatabase: ${database}\n`);
+
+  // The seeded admin has two-factor enabled, and the token is emailed. In a container we own and
+  // throw away, turning it off for the seeded users is the honest way in; against any other database
+  // the developer logs in normally and passes --base-url.
+  if (sql) {
+    const out = sql.exec(`
+      DECLARE @t sysname = (SELECT TOP 1 TABLE_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE COLUMN_NAME = 'TwoFactorEnabled');
+      IF @t IS NULL THROW 51000, 'no table carries TwoFactorEnabled', 1;
+      DECLARE @sql nvarchar(max) = N'UPDATE ' + QUOTENAME(@t) + ' SET TwoFactorEnabled = 0';
+      EXEC sp_executesql @sql;
+      SELECT @t AS [table], @@ROWCOUNT AS [rows];
+    `);
+    process.stderr.write(`sql: disabled two-factor in the throwaway database — ${out.replace(/\s+/g, ' ').trim()}\n`);
+  }
 
   const token = await login(baseUrl);
   const results = await runCases(scoped, { baseUrl, token });
@@ -70,6 +100,7 @@ try {
   }, null, 2));
 } finally {
   if (api) api.stop();
+  if (sql) sql.stop();
 }
 
 process.exit(failed ? 1 : 0);
