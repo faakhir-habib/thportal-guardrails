@@ -122,3 +122,123 @@ A new service or repository is invisible until all five files change. Missing an
 Registering a service directly in `backend/FileManager/Extensions/ServiceExtensions.cs` is only for
 the exceptions already there: infrastructure (`IPdfService`, `ICaptchaService`, `ISmsService`) and
 background or Hangfire-activated services.
+
+## Soft delete and active status
+
+**There are no EF global query filters in this solution.** `HasQueryFilter` appears nowhere — not in
+`backend/Repository/RepositoryContext.cs`, not in any of the 62 files in `Repository/Configuration/`.
+Nothing filters deleted rows for you. 21 entities carry `IsDeleted`.
+
+- **Every new or changed read query filters the status flags its entity carries** — `IsActive`,
+  `IsDeleted`, `Discontinued`, and variants such as `Deleted`, `IsArchived`, `IsEnabled` or a `Status`
+  enum — `violation`.
+- The shape is an explicit predicate:
+  `FindByCondition(l => l.Id == lotId && l.IsDeleted == false, trackChanges)`.
+  `backend/Repository/LotRepository.cs` does this in 17 places.
+- **Check the entity before flagging or fixing.** A repository's name says nothing about which flags
+  its entity has; open the class under `Entities/Models/`.
+- **Omitting the filter is correct when the method says so.** `GetAllIncludingInactiveAsync`,
+  `GetByIdForRestoreAsync`, or an explicit parameter as in `backend/Repository/ScenarioRepository.cs:60`
+  — `FindByCondition(s => includeInactive || s.IsActive, trackChanges: false)`. Intent in the name is
+  the difference between a feature and a bug; a generic `GetProductByIdAsync` that quietly returns
+  deleted rows is a bug.
+
+**Why:** a missed filter does not throw. A discontinued product appears in a dropdown, a count is
+wrong, a "deleted" user comes back — and it surfaces far from the query that caused it.
+
+## Audit logging
+
+Every create, update, delete or status change writes an activity row — `violation`.
+
+**The common case** — `backend/Service/ScenarioStepService.cs`:
+
+```csharp
+await _systemActivityService.LogEntityAsync(ActivityTypes.DsmScenarioCreated, scenario.Id, ("Name", scenario.Name));
+```
+
+`LogEntityAsync` (`backend/Service/Extensions/SystemActivityExtensions.cs`) prepends the entity id
+itself, so do not pass an entity-id pair of your own.
+
+**Many or conditional pairs** — `backend/Service/LotCriticalDatesService.cs`:
+
+```csharp
+var info = new List<KeyValuePair<string, string>> { new(AdditionalInfoKeys.ENTITY_ID, dealId.ToString()) };
+if (outcome.ReasonCode != null)
+    info.Add(new(AdditionalInfoKeys.REASON_CODE, $"{outcome.ReasonCode.Code} - {outcome.ReasonCode.Name}"));
+await _systemActivityService.OnActivityAsync(ActivityTypes.CriticalDatesUpdated, info);
+```
+
+- **The activity type is always a constant** in `backend/Service/ActivityTypes.cs`. Add a new one
+  there; never pass a string literal — `violation`.
+- **Shared keys come from `AdditionalInfoKeys`** (`ActivityTypes.cs:509-549`). Feature-specific pairs
+  may use inline keys — `suggestion` when a shared key exists and is not used.
+- **An update records the old and new values** of the fields that changed, the way
+  `LotCriticalDatesService` snapshots before and after — `violation`.
+- **`ISystemActivityService.AddActivity` is legacy** — 4 file-system call sites — and must not appear
+  in new code — `violation`.
+- **Entities carrying `CreatedBy` / `UpdatedBy` get them set** from `ILoggedInUserService` —
+  `violation`.
+- **`CreatedAt` / `LastModified` are never assigned by hand.** `RepositoryContext.SaveChangesAsync`
+  sets them through `ITimeStampedModel` — `violation`.
+
+**Why:** the activity log is what answers "who changed this deal's closing date, and from what" months
+later. A mutation that skips it is invisible, and nobody notices until someone needs the history.
+
+## EF configuration and migrations
+
+- **An entity change ships with its migration in the same PR** — `violation`.
+- **A new `IEntityTypeConfiguration<T>` must be registered by hand** with
+  `modelBuilder.ApplyConfiguration(new XConfiguration());` in `RepositoryContext.OnModelCreating`
+  (the block starts around line 1177 and holds 66 of them). There is no
+  `ApplyConfigurationsFromAssembly`, so a forgotten line means the configuration silently does
+  nothing — `violation`.
+- **`Up` and `Down` are exact inverses**, and the migration carries only this change, no unrelated
+  model drift — `violation`.
+- **Destructive changes are called out in the PR description** — dropped columns, renames, type
+  narrowing, data backfills. The reviewer and the lead need to see the impact before it reaches
+  staging — `violation`.
+- Configuration order follows `backend/Repository/Configuration/ScenarioStepConfiguration.cs`:
+  `HasKey` → `Property(...).IsRequired().HasMaxLength(n)` → relationships with an explicit `OnDelete`
+  → `HasIndex(...).HasDatabaseName("IX_<Entity>_<Cols>")` → audit FKs with `DeleteBehavior.Restrict`
+  — `suggestion`.
+- Raw interpolated SQL for data changes is a last resort. `Migrations/20260904113207_SeedAdminRoleForDSM.cs`
+  is the counter-example: its `Down` deletes rows it cannot prove `Up` created — `suggestion`.
+
+## DTOs
+
+Golden example: `backend/Shared/DataTransferObjects/TaxCategoryDto.cs`.
+
+- **A controller never accepts or returns an entity.** The API contract and the database schema must
+  be free to change independently, and an entity in a response leaks fields nobody meant to publish —
+  `violation`.
+- **DTOs are `public class` with `{ get; set; }`.** Of 323 files in `Shared/DataTransferObjects/`, 285
+  use `class` and 36 use `record`; new code follows the majority. `DrawCodeDto.cs` is the
+  counter-example — `violation`.
+- **Non-nullable strings are initialized `= string.Empty`; optional ones are `?`** — `violation`.
+- **DataAnnotations go on write DTOs only** — `[Required(ErrorMessage = …)]`,
+  `[MaxLength(n, ErrorMessage = …)]`. There is no shared length-constants type, so keep `n` in step
+  with the `HasMaxLength(n)` in the entity's EF configuration — `violation` for a missing annotation,
+  `suggestion` for a mismatch with the configuration.
+- **Naming:** `FooDto` for reads, `FooCreateDto` and `FooUpdateDto` for writes; a feature's DTOs share
+  one file, as in `DsmScenarioDtos.cs` — `violation`.
+
+## Frontend sync
+
+This is a backend rule. The reviewer reads frontend files only to find stale callers, and comments on
+nothing else there.
+
+When a diff changes **an existing DTO** (property renamed, removed or retyped) **or an endpoint
+signature** — route template, HTTP verb, path or query parameters, `[FromBody]` type, response shape,
+or authorization — every frontend caller must be updated in the same PR — `violation`.
+
+How to check:
+
+- search `frontend/` for the old property name in both casings (`XRatio` and `xRatio`), and for a
+  distinctive fragment of the old route, with and without a leading slash;
+- include `*.component.html`, where nothing catches a renamed property;
+- check `*.spec.ts` mocks, which otherwise keep passing against a contract that no longer exists.
+
+**Why:** the backend still compiles and its tests still pass. On PR #2312 the Angular services asked
+for `model-elevation-products` while the controller routed on `modelelevationproducts`, and the
+service's `catchError` swallowed the 404 — the dropdowns simply rendered empty. If the diff has no
+frontend changes and the backend change is breaking, say so plainly; the frontend work is missing.
