@@ -64,7 +64,7 @@ AI has made development fast, and three things have broken along the way:
 | Integration tests | Mandatory for important scenarios, pushed with the PR |
 | Review strictness | Every PR review skill check blocks, plus DRY/SRP/LSP and audit logging; env vars are informational |
 | Scope | Backend only. Frontend code is never reviewed or validated; frontend files are only read to check that a changed DTO or endpoint has its callers updated |
-| QA handoff | Aqil is tagged only when the PR opens |
+| QA handoff | Aqil is tagged only when the PR opens, and nothing reaches the ticket until the developer has read the QA cases and said to post |
 | PR description | Short and plain: Asana link, summary, why, verification, waivers |
 | Commit messages | Conventional header, a "why" body, an `Asana:` trailer |
 | Claude attribution | Never in commits or PRs; blocked in settings, hooks, `/ship` and CI |
@@ -213,7 +213,8 @@ must be linked. If no ticket exists, `/ticket` creates one in the ERP project fi
    - reuse decisions;
    - decisions with the rejected alternatives and why;
    - the important scenarios that need integration tests.
-7. **Wait for approval.** Coding starts only after the developer approves the plan.
+7. **Wait for approval.** Coding starts only after the developer approves the plan and the QA cases.
+   They are reviewed twice — here, and again in `/ship` before anything is posted to the ticket.
 
 **Important scenarios**, which need an integration test:
 
@@ -286,11 +287,19 @@ Running `/ship` is the developer's explicit go-ahead to push. Claude never pushe
 4. **Preview verification.** Wait (with a timeout) for `https://pr-<N>-api.dev.thportal.ca`, then
    rerun the `API` cases there. If the preview does not come up, continue with the local results and
    say so.
-5. **Asana.**
-   - Post one comment with the branch, the preview URL `https://pr-<N>.dev.thportal.ca`, the PR link,
-     the QA case table, the verification results, any waivers, and a mention of Aqil.
-   - Move the task to the **QA** section.
-6. **On an existing PR** (later pushes), `/ship` pushes and adds a short Asana update.
+5. **Asana — only after the developer approves the text.** Nothing is posted automatically.
+   - Print the exact comment that would go to the ticket: the branch, the preview URL
+     `https://pr-<N>.dev.thportal.ca`, the PR link, the QA case table, the verification results, any
+     waivers, and the mention of Aqil.
+   - Stop and wait. The developer reads the QA cases, edits or removes any that are wrong, adds what
+     is missing, and says to post.
+   - Only then post the comment and move the task to the **QA** section.
+
+   **Why:** the QA cases are what Aqil tests from, and a wrong or half-understood case wastes a QA
+   cycle and makes the developer look careless. The person who wrote the code is the one who knows
+   whether a case matches what was actually built.
+6. **On an existing PR** (later pushes), `/ship` pushes and prints a short Asana update, again waiting
+   for the go-ahead before posting.
 
 Nothing is written to GitHub beyond what a developer does by hand today: a branch, a PR and its
 description. No status checks, no bot comments, no labels.
