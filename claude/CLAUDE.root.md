@@ -9,8 +9,8 @@ Asana ERP board; branches come off `staging`.
   variables.
 - Docker Desktop — the integration suite runs SQL Server in Testcontainers.
 - `gh` installed and authenticated.
-- After pulling the guardrails bundle: `bash .claude/guardrails/scripts/sync-local.sh`, then restart Claude
-  Code so the agent and skill register.
+- After pulling the guardrails bundle: `node .claude/guardrails/scripts/install.mjs`, then restart
+  Claude Code so the agent and skills register.
 - Start Claude Code from the repo root or from `backend/` — either works. The sync script installs the
   agent and skill in both, and the root `CLAUDE.md`, with the rules it imports, is read from either.
 
@@ -38,9 +38,13 @@ Three principles sit above the specific rules:
 
 `/ticket` → plan approved → code → `/validate` → commit → `/ship`
 
-Only `/thportal-review` exists today. `/ticket`, `/validate`, `/ship` and `/learn` are still being
-built, so until they land: review with `/thportal-review --local` before committing, and do the Asana
-and QA steps by hand.
+`/validate` and `/thportal-review` exist today. **A commit that touches `backend/` is refused unless
+`/validate` has passed on exactly that staged content** — format, build, the integration suite and an
+architecture review. It takes about five and a half minutes. Frontend-only and merge commits are
+untouched.
+
+`/ticket`, `/ship` and `/learn` are still being built, so until they land, do the ticket, QA and
+Asana steps by hand.
 
 Never commit or push unless the developer asks. Leave finished work in the working tree and report
 what changed per file.
