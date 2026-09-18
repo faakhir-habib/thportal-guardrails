@@ -1,5 +1,5 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { join } from 'node:path';
 import { currentBranch, repoRoot, stagedFiles, ticketForBranch, touchesBackend, writeTree } from './lib/repo.mjs';
 import { runBackendChecks } from './lib/checks.mjs';
@@ -62,20 +62,51 @@ if (!reviewPath) {
   process.exit(result === 'pass' ? 0 : 1);
 }
 
+// QA cases come from the ticket the branch is linked to. Without a link there is nothing to run, and
+// saying so in the stamp is better than implying the cases passed.
+function runQaCases() {
+  const ticket = ticketForBranch();
+  if (!ticket) return { skipped: 'this branch is not linked to a ticket' };
+
+  const workDir = `.claude/work/${ticket}`;
+  if (!existsSync(join(repoRoot(), workDir, 'qa-cases.json'))) {
+    return { skipped: `no qa-cases.json in ${workDir} — run /ticket first` };
+  }
+
+  process.stderr.write('qa: running the in-scope cases over HTTP\n');
+  const r = spawnSync(process.execPath, [join(import.meta.dirname, 'qa-verify.mjs'), '--work', workDir], {
+    cwd: repoRoot(),
+    encoding: 'utf8',
+    maxBuffer: 32 * 1024 * 1024,
+  });
+
+  process.stderr.write(r.stderr ?? '');
+  try {
+    return JSON.parse(r.stdout);
+  } catch {
+    return { result: 'fail', reason: 'the QA runner produced no result', output: (r.stdout ?? r.stderr ?? '').slice(-2000) };
+  }
+}
+
 const review = JSON.parse(readFileSync(reviewPath, 'utf8'));
 const all = review.violations ?? [];
 const violations = all.filter((v) => !v.waived);
 const waivers = all.filter((v) => v.waived);
-const overall = result === 'pass' && violations.length === 0 ? 'pass' : 'fail';
+
+const qa = runQaCases();
+const qaFailed = qa.result === 'fail';
+
+const overall = result === 'pass' && violations.length === 0 && !qaFailed ? 'pass' : 'fail';
 
 const stampFile = writeStamp({
   tree,
   branch: currentBranch(),
   asanaTask: ticketForBranch(),
   rulesHash: rulesHash(),
-  kind: 'part2',
+  kind: 'part3',
   checks,
   review: { violations, suggestions: review.suggestions ?? [], waivers },
+  qa,
   result: overall,
 });
 
@@ -85,5 +116,6 @@ console.log(JSON.stringify({
   stamp: stampFile,
   violations: violations.length,
   waivers: waivers.length,
+  qa: qa.skipped ? `skipped — ${qa.skipped}` : `${qa.passed ?? 0} passed, ${qa.failed ?? 0} failed`,
 }, null, 2));
 process.exit(overall === 'pass' ? 0 : 1);
