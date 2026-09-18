@@ -1,4 +1,4 @@
-import { spawnSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { join } from 'node:path';
 import { repoRoot } from './repo.mjs';
 
@@ -28,14 +28,27 @@ export const dockerRunning = () => runCheck('docker', 'docker', ['info']).status
 export const stagedCsIncludes = (files) =>
   files.filter((f) => f.startsWith('backend/') && f.endsWith('.cs')).map((f) => f.slice('backend/'.length));
 
-export const formatBackend = (files = []) => {
+// Formatting fixes rather than verifies, then re-stages what it rewrote. Verifying would block a
+// developer for whitespace that was already in the file before they touched it — several existing
+// files do not pass `dotnet format` today. This is also what the repo's own husky task did.
+export const formatAndRestage = (files = []) => {
   const include = stagedCsIncludes(files);
   if (include.length === 0) {
-    return { name: 'format', status: 'pass', durationMs: 0, output: 'no staged .cs files' };
+    return { name: 'format', status: 'pass', durationMs: 0, output: 'no staged .cs files', reformatted: [] };
   }
-  return runCheck('format', 'dotnet', ['format', 'FileManagementServer.sln', '--verify-no-changes', '--include', ...include], {
+
+  const r = runCheck('format', 'dotnet', ['format', 'FileManagementServer.sln', '--no-restore', '--include', ...include], {
     cwd: backend(),
   });
+  if (r.status !== 'pass') return { ...r, reformatted: [] };
+
+  const staged = files.filter((f) => f.endsWith('.cs'));
+  const changed = execFileSync('git', ['diff', '--name-only', '--', ...staged], { cwd: repoRoot(), encoding: 'utf8' })
+    .split('\n')
+    .filter(Boolean);
+  if (changed.length) execFileSync('git', ['add', '-u', '--', ...changed], { cwd: repoRoot() });
+
+  return { ...r, reformatted: changed };
 };
 
 export const buildBackend = () =>
@@ -49,7 +62,12 @@ export const testBackend = () =>
 export function runBackendChecks({ files = [], onProgress = () => {} } = {}) {
   const checks = {};
   const record = (r) => {
-    checks[r.name] = { status: r.status, durationMs: r.durationMs, output: r.status === 'fail' ? r.output : '' };
+    checks[r.name] = {
+      status: r.status,
+      durationMs: r.durationMs,
+      output: r.status === 'fail' ? r.output : '',
+      ...(r.reformatted?.length ? { reformatted: r.reformatted } : {}),
+    };
     onProgress(r);
     return r.status === 'pass';
   };
@@ -63,7 +81,7 @@ export function runBackendChecks({ files = [], onProgress = () => {} } = {}) {
     return { result: 'fail', checks };
   }
 
-  if (!record(formatBackend(files))) return { result: 'fail', checks };
+  if (!record(formatAndRestage(files))) return { result: 'fail', checks };
   if (!record(buildBackend())) return { result: 'fail', checks };
   if (!record(testBackend())) return { result: 'fail', checks };
   return { result: 'pass', checks };
