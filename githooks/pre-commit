@@ -1,0 +1,12 @@
+#!/bin/sh
+# Frontend formatting first: lint-staged rewrites files, and the tree hash must be taken after it.
+# Skipped when the frontend has never been installed — that is a clone that does no frontend work,
+# not a reason to refuse the commit.
+if git diff --cached --name-only | grep -q '^frontend/' && [ -x frontend/node_modules/.bin/lint-staged ]; then
+  (cd frontend && npx --no -- lint-staged) || exit 1
+  git add -u -- frontend
+fi
+
+BUNDLE="$(git rev-parse --show-toplevel)/.claude/guardrails"
+[ -f "$BUNDLE/scripts/gate.mjs" ] || exit 0
+node "$BUNDLE/scripts/gate.mjs" || exit 1
