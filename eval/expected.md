@@ -75,6 +75,20 @@ Extended by `/learn` whenever a rule is added.
 | 2026-09-18 | bad-diff | 22 of 22 planted | 0 | 5, all genuine | The rules needed no strengthening. The five extras were real violations the table had missed — `CreatedBy`/`UpdatedBy` never set, an update logging no old/new values, a public method returning a bare `Task<decimal>`, none of the five wiring files touched, and a POST body DTO with no annotations. They are now planted ids V23-V27. |
 | 2026-09-18 | clean-diff | — | — | 0 violations, 5 suggestions | Passed: empty `violations`. Both traps handled correctly — `GetAllIncludingInactiveAsync` was not called a soft-delete violation, and the new configuration key appeared only as a suggestion. The suggestions were fair: the fixture's test file really is missing usings, and `_cdnBaseUrl` really is dead. |
 
+### Smoke test on real code
+
+2026-09-18, PR #2422 ("hide alternate-room products until a rule activates the room", 15 backend
+files, already merged): 1 violation and 6 suggestions. Four claims were spot-checked by hand and all
+four held exactly — `HomeRoomScopeTests` really is mock-based with no `[Collection]` or
+`TestingWebApplicationFactory`, `InternalsVisibleTo` really was added to `Repository/Repository.csproj:30`,
+and the new location predicate really does omit the `!pl.Location.InActive` check that the sibling
+query on line 324 of the same file applies.
+
+The violation is the Tests rule: a change to data scope shipped with a service-level mock test instead
+of one that drives the route, so the new EF predicate and the new `lotId` query parameter were never
+exercised as SQL or over HTTP. That is the class of gap this whole exercise exists to catch, and it
+was found on a PR that had already been reviewed and merged.
+
 Two notes on how this baseline was produced, so the next run is comparable:
 
 - It ran with the reviewer's instructions passed inline to a general-purpose subagent, because a newly
