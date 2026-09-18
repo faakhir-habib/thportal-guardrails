@@ -49,6 +49,32 @@ printf '{"tree":"%s","result":"pass","rulesHash":"stale","createdAt":"%s"}' \
 git commit -q -m "feat(be): add B
 
 B follows A."; check "a stamp from older rules is refused" "$?" "1"
+
+echo "commit message rules"
+git reset -q HEAD -- backend/B.cs
+rm -f backend/B.cs
+echo "class C {}" > backend/C.cs
+git add backend/C.cs
+stamp "$(git write-tree)"
+
+git commit -q -m "added stuff"; check "a non-conventional header is refused" "$?" "1"
+git commit -q -m "feat(be): add C"; check "a header with no body is refused" "$?" "1"
+git commit -q -m "feat(be): add C
+
+Co-Authored-By: Claude <noreply@anthropic.com>"; check "attribution is refused" "$?" "1"
+git commit -q -m "feat(be): add C
+
+C is needed because B could not carry the flag."; check "a good message is accepted" "$?" "0"
+
+echo "the Asana trailer"
+git config branch.main.asanaTask 1218492088693885
+echo "class D {}" > backend/D.cs
+git add backend/D.cs
+stamp "$(git write-tree)"
+git commit -q -m "feat(be): add D
+
+D exists so the trailer has something to attach to."
+git log -1 --format=%B | grep -q "Asana: .*1218492088693885"; check "the trailer was appended from the branch link" "$?" "0"
 set -e
 
 echo

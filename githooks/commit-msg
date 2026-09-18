@@ -1,0 +1,16 @@
+#!/bin/sh
+MSG_FILE="$1"
+ROOT="$(git rev-parse --show-toplevel)"
+GIT_DIR_ABS="$(git rev-parse --absolute-git-dir)"
+
+# A merge's message is git's own; the merged commits were checked on their way in.
+[ -f "$GIT_DIR_ABS/MERGE_HEAD" ] && exit 0
+
+if git diff --cached --name-only | grep -q '^backend/'; then
+  [ -f "$ROOT/.claude/guardrails/scripts/commit-msg.mjs" ] || exit 0
+  node "$ROOT/.claude/guardrails/scripts/commit-msg.mjs" "$MSG_FILE" || exit 1
+fi
+
+if git diff --cached --name-only | grep -q '^frontend/' && [ -x "$ROOT/frontend/node_modules/.bin/commitlint" ]; then
+  (cd "$ROOT/frontend" && npx --no -- commitlint --edit "$MSG_FILE") || exit 1
+fi

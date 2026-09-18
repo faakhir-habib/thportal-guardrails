@@ -1,0 +1,12 @@
+#!/bin/sh
+MSG_FILE="$1"
+SOURCE="$2"
+[ "$SOURCE" = "merge" ] && exit 0
+
+BRANCH="$(git branch --show-current)"
+[ -n "$BRANCH" ] || exit 0
+TICKET="$(git config --get "branch.$BRANCH.asanaTask" || true)"
+[ -n "$TICKET" ] || exit 0
+
+grep -qi '^Asana:' "$MSG_FILE" && exit 0
+printf '\nAsana: https://app.asana.com/1/1209040875779194/project/1209042358568959/task/%s\n' "$TICKET" >> "$MSG_FILE"
