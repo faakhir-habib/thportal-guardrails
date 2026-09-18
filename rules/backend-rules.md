@@ -242,3 +242,111 @@ How to check:
 for `model-elevation-products` while the controller routed on `modelelevationproducts`, and the
 service's `catchError` swallowed the 404 — the dropdowns simply rendered empty. If the diff has no
 frontend changes and the backend change is breaking, say so plainly; the frontend work is missing.
+
+## Naming
+
+**C# conventions** — `violation`:
+
+- PascalCase for classes, methods, properties, enum members, namespaces; camelCase for locals and
+  parameters.
+- `Async` suffix on every method returning `Task`, `Task<T>` or `ValueTask`, including helpers and
+  extension methods.
+- `I` prefix on interfaces. No Hungarian or type prefixes on properties.
+
+**Project patterns** — verify before flagging, then `violation` when the codebase is consistent and
+`suggestion` when it is split:
+
+- Repository methods: `GetAll<X>Async`, `Get<X>ByIdAsync`, `Get<X>By<Filter>Async`, and synchronous
+  `Create<X>` / `Update<X>` / `Delete<X>` that only mark the entity.
+- Service methods are all async: `Get<X>Async`, `Create<X>Async`, `Update<X>Async`, `Delete<X>Async`,
+  `Toggle<X>StatusAsync`, `Upsert<X>Async`.
+- `Delete*` over `Remove*`: 75 service files use `Delete*Async`, 20 use `Remove*Async`. Prefer
+  `Delete*`; a `Remove*` on a resource whose existing methods are `Delete*` is a split worth flagging.
+- `Get*` over `Fetch*` / `Retrieve*` / `Load*`: only one service file uses the alternatives.
+- Boolean properties are `Is*` / `Has*` / `Can*`.
+- Foreign keys pair as `<Entity>Id` (scalar) and `<Entity>` (navigation).
+
+**How to verify a naming concern.** Count both forms before saying anything:
+`grep -rl "Remove.*Async" --include=*.cs Service | wc -l` against the `Delete*` equivalent. A clear
+majority makes it a violation; a near-even split makes it a suggestion, and the author chooses. Group
+several naming points into one finding rather than listing each property.
+
+**Why:** names are the interface. When a new method breaks the pattern, autocomplete stops helping,
+the domain language drifts, and every reader pays a small tax forever.
+
+## DRY, SRP, LSP
+
+- **DRY** — before writing a helper, mapper, query or validation, search for an existing one and reuse
+  it. Two copies of the same logic inside one diff is a `violation`. The live example of the cost:
+  `SetUpdateAuditFields` (`Service/ModelElevationProductsService.cs:568`) and `UpdateAuditMetadata`
+  (`Service/ScheduleService.cs:1079`) do the same job in two places, so a change to how `UpdatedBy` is
+  stamped now has two homes. New code picks one approach.
+- **SRP** — one reason to change per class, one job per method. A method past ~40-50 lines is split
+  into validate / map / persist / log steps — `violation`.
+- **LSP** — an implementation honours its interface: no `NotImplementedException`, no preconditions
+  the interface does not state, no `is`/`as` checks on the concrete type by its callers, no surprise
+  side effects. A repository method that throws instead of deleting breaks every caller that trusts
+  the contract — `violation`.
+
+## Security
+
+- **Every new endpoint carries `[ModuleRoleAuthorize(modules: …, roles: …)]`** — 102 of the V2
+  controllers do. A deliberately public endpoint (health checks, webhooks with their own signature
+  check) says why in the diff — `violation`.
+- **Write actions carry `[ServiceFilter(typeof(ValidationFilterAttribute))]`** — `violation`.
+- **Changing an existing endpoint's roles** — narrowing or widening — is called out in the PR
+  description, because the frontend may need to change with it — `violation`.
+- **No secrets in code:** no connection strings, API keys, passwords or tokens. They belong in
+  configuration and in the environment — `violation`.
+
+## Code quality
+
+- `async` all the way: `ToListAsync` / `FirstOrDefaultAsync`, never `.Result` or `.Wait()` on a task —
+  `violation`.
+- `AsNoTracking()`, or `trackChanges: false` through the repository, on read-only queries —
+  `violation`.
+- No `Console.WriteLine` or `Debug.WriteLine` in production code; use `ILogger` — `violation`.
+- No new `TODO` / `FIXME` comments — unfinished work does not merge — `violation`.
+- No magic numbers or strings: name the constant or move it to configuration — `suggestion`.
+- No unused usings — `suggestion`.
+- Minimal comments. Write a comment only for something the code cannot say, such as an external API's
+  quirk — `suggestion`.
+- A new environment variable or configuration key is a `suggestion`, but it must be listed in the PR's
+  "Why" so every environment gets it before the deploy.
+
+## Tests
+
+Golden example: `backend/FileManager.IntegrationTests/DealLifecycleE2ETests.cs`.
+
+**An integration test is mandatory** — `violation` — when the change touches any of:
+
+- money or calculations (tax, discounts, dates);
+- auth, roles or data scope;
+- state or lifecycle transitions;
+- external integrations and webhooks;
+- delete, soft-delete or bulk updates;
+- **any bug fix**, as a regression test that reproduces the bug first.
+
+Plain CRUD with no business rule, configuration and text changes are exempt.
+
+How the test is written:
+
+- `[Collection(IntegrationTestCollection.Name)]`, constructor takes `TestingWebApplicationFactory<Program>`
+  and does only `factory.CreateClient()`;
+- authenticate with `DealApiFactory.AuthenticateClientAsync(_client)`, then call the real route over
+  HTTP and read the envelope with `DealApiFactory.ReadRootAsync`;
+- reuse `Fixtures/DealDomainSeeder.cs` and `Constants/TestConstants` rather than seeding by hand;
+- a mutation's test also asserts the `SystemActivity` row the change is supposed to write;
+- keep it small and scenario-shaped. `LotCriticalDatesServiceTests.cs` (923 lines) is not a model to
+  copy — it is service-level and too large to read.
+
+**Why:** the suite is the only thing standing between a refactor and a silent regression, and it runs
+on every PR as a required check.
+
+## Changelog
+
+Every rule added after this file was created records itself here, with the eval case that proves it.
+
+| Date | Rule | Why it was added | Source (PR/ticket) | Eval case |
+|---|---|---|---|---|
+| 2026-09-18 | All rules in this file | Created from the guardrails design; verified against the codebase | `docs/design.md` | V1-V22 |
