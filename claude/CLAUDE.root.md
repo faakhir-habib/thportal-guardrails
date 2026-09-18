@@ -9,9 +9,10 @@ Asana ERP board; branches come off `staging`.
   variables.
 - Docker Desktop — the integration suite runs SQL Server in Testcontainers.
 - `gh` installed and authenticated.
-- After pulling the guardrails bundle: `bash .claude/guardrails/scripts/sync-local.sh`.
-- **Start Claude Code from the repo root**, not from `backend/`. Rules are imported with a path that
-  needs approval when the session starts deeper in the tree.
+- After pulling the guardrails bundle: `bash .claude/guardrails/scripts/sync-local.sh`, then restart Claude
+  Code so the agent and skill register.
+- Start Claude Code from the repo root or from `backend/` — either works. The sync script installs the
+  agent and skill in both, and the root `CLAUDE.md`, with the rules it imports, is read from either.
 
 ## Scope of these rules
 

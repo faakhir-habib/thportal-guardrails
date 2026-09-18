@@ -24,14 +24,15 @@ bash .claude/guardrails/scripts/sync-local.sh
 ```
 
 `sync-local.sh` copies the agent, the skill and the two `CLAUDE.md` files into the paths Claude Code
-reads (`.claude/agents/`, `.claude/skills/`, `CLAUDE.md`, `backend/CLAUDE.md`). Restart Claude Code
-afterwards — a new agent or skill is only registered at startup.
+reads, and adds the `.git/info/exclude` entries that keep them out of the product repo.
 
-Then hide the two `CLAUDE.md` files from git, once per clone:
+It copies into **both** `.claude/` and `backend/.claude/`, because Claude Code loads agents and skills
+from the `.claude/` of whichever directory the session starts in — and developers start sessions in
+both the repo root and `backend/`. `CLAUDE.md` behaves differently: it is read from the session
+directory upwards, so the root file is always picked up.
 
-```bash
-printf '\n/CLAUDE.md\n/backend/CLAUDE.md\n' >> .git/info/exclude
-```
+**Restart Claude Code after syncing.** A new agent or skill is only registered at startup; until then
+`/thportal-review` comes back as an unknown command.
 
 Updating is `git -C .claude/guardrails pull` followed by the same sync command.
 
