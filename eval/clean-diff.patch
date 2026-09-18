@@ -6,27 +6,27 @@ index a8f1eb7..2a2fb92 100644
  {
      public interface IRepositoryManager
      {
-+        IProductImageRepository ProductImages { get; }
-         IProductRepository Products { get; }
++        IPlacardPhotoRepository PlacardPhotos { get; }
+         IPlacardRepository Placards { get; }
          IScenarioRepository Scenarios { get; }
  
-diff --git a/backend/Entities/Models/ProductImage.cs b/backend/Entities/Models/ProductImage.cs
+diff --git a/backend/Entities/Models/PlacardPhoto.cs b/backend/Entities/Models/PlacardPhoto.cs
 index 682f55f..e60d545 100644
---- a/backend/Entities/Models/ProductImage.cs
-+++ b/backend/Entities/Models/ProductImage.cs
+--- a/backend/Entities/Models/PlacardPhoto.cs
++++ b/backend/Entities/Models/PlacardPhoto.cs
 @@ -7,6 +7,7 @@ namespace Entities.Models
          public Guid Id { get; set; }
-         public Guid ProductId { get; set; }
+         public Guid PlacardId { get; set; }
          public string Url { get; set; } = string.Empty;
 +        public string? AltText { get; set; }
          public bool IsActive { get; set; }
          public bool IsDeleted { get; set; }
          public string? CreatedBy { get; set; }
-diff --git a/backend/FileManager.IntegrationTests/ProductImageApiTests.cs b/backend/FileManager.IntegrationTests/ProductImageApiTests.cs
+diff --git a/backend/FileManager.IntegrationTests/PlacardPhotoApiTests.cs b/backend/FileManager.IntegrationTests/PlacardPhotoApiTests.cs
 new file mode 100644
 index 0000000..f506d2f
 --- /dev/null
-+++ b/backend/FileManager.IntegrationTests/ProductImageApiTests.cs
++++ b/backend/FileManager.IntegrationTests/PlacardPhotoApiTests.cs
 @@ -0,0 +1,72 @@
 +using System.Net;
 +using System.Text.Json;
@@ -42,12 +42,12 @@ index 0000000..f506d2f
 +    /// image does not, and the create writes its activity row.
 +    /// </summary>
 +    [Collection(IntegrationTestCollection.Name)]
-+    public class ProductImageApiTests
++    public class PlacardPhotoApiTests
 +    {
 +        private readonly HttpClient _client;
 +        private readonly TestingWebApplicationFactory<Program> _factory;
 +
-+        public ProductImageApiTests(TestingWebApplicationFactory<Program> factory)
++        public PlacardPhotoApiTests(TestingWebApplicationFactory<Program> factory)
 +        {
 +            _factory = factory;
 +            _client = factory.CreateClient();
@@ -57,10 +57,10 @@ index 0000000..f506d2f
 +        public async Task CreatedImageIsListedAndAudited()
 +        {
 +            await DealApiFactory.AuthenticateClientAsync(_client);
-+            var productId = TestConstants.DealDomain.ProductId;
++            var placardId = TestConstants.DealDomain.PlacardId;
 +
 +            var create = await _client.PostAsync(
-+                $"/api/v2/products/{productId}/images",
++                $"/api/v2/products/{placardId}/images",
 +                DealApiFactory.JsonBody(new { url = "https://cdn.example.com/a.png", altText = "front" }));
 +
 +            create.StatusCode.Should().Be(HttpStatusCode.OK, "creating an image should succeed");
@@ -68,18 +68,18 @@ index 0000000..f506d2f
 +            var created = await DealApiFactory.ReadRootAsync(create);
 +            var imageId = created.GetProperty("data").GetProperty("id").GetGuid();
 +
-+            var list = await _client.GetAsync($"/api/v2/products/{productId}/images");
++            var list = await _client.GetAsync($"/api/v2/products/{placardId}/images");
 +            var listRoot = await DealApiFactory.ReadRootAsync(list);
 +            listRoot.GetProperty("data").EnumerateArray()
 +                .Select(i => i.GetProperty("id").GetGuid())
 +                .Should().Contain(imageId, "a newly created image belongs in the list");
 +
-+            await AssertActivityWrittenAsync(imageId, "ProductImageCreated");
++            await AssertActivityWrittenAsync(imageId, "PlacardPhotoCreated");
 +
-+            var delete = await _client.DeleteAsync($"/api/v2/products/{productId}/images/{imageId}");
++            var delete = await _client.DeleteAsync($"/api/v2/products/{placardId}/images/{imageId}");
 +            delete.StatusCode.Should().Be(HttpStatusCode.OK);
 +
-+            var afterDelete = await _client.GetAsync($"/api/v2/products/{productId}/images");
++            var afterDelete = await _client.GetAsync($"/api/v2/products/{placardId}/images");
 +            var afterRoot = await DealApiFactory.ReadRootAsync(afterDelete);
 +            afterRoot.GetProperty("data").EnumerateArray()
 +                .Select(i => i.GetProperty("id").GetGuid())
@@ -100,11 +100,11 @@ index 0000000..f506d2f
 +        }
 +    }
 +}
-diff --git a/backend/FileManager.Presentation/Controllers/V2/ProductImageController.cs b/backend/FileManager.Presentation/Controllers/V2/ProductImageController.cs
+diff --git a/backend/FileManager.Presentation/Controllers/V2/PlacardPhotoController.cs b/backend/FileManager.Presentation/Controllers/V2/PlacardPhotoController.cs
 new file mode 100644
 index 0000000..95e4fd8
 --- /dev/null
-+++ b/backend/FileManager.Presentation/Controllers/V2/ProductImageController.cs
++++ b/backend/FileManager.Presentation/Controllers/V2/PlacardPhotoController.cs
 @@ -0,0 +1,40 @@
 +using FileManager.Presentation.ActionFilters;
 +using Microsoft.AspNetCore.Mvc;
@@ -114,34 +114,34 @@ index 0000000..95e4fd8
 +
 +namespace FileManager.Presentation.Controllers.V2
 +{
-+    [Route("api/v2/products/{productId:guid}/images")]
++    [Route("api/v2/products/{placardId:guid}/images")]
 +    [ApiController]
 +    [ModuleRoleAuthorize(modules: new[] { Modules.Catalog }, roles: new[] { Roles.Admin, Roles.CatalogManager })]
-+    public class ProductImageController : ControllerBase
++    public class PlacardPhotoController : ControllerBase
 +    {
 +        private readonly IServiceManager _service;
 +
-+        public ProductImageController(IServiceManager service) => _service = service;
++        public PlacardPhotoController(IServiceManager service) => _service = service;
 +
 +        [HttpGet]
-+        public async Task<IActionResult> GetProductImages(Guid productId)
++        public async Task<IActionResult> GetPlacardPhotos(Guid placardId)
 +        {
-+            var result = await _service.ProductImageService.GetProductImagesAsync(productId);
++            var result = await _service.PlacardPhotoService.GetPlacardPhotosAsync(placardId);
 +            return result.ToActionResult(ResponseMessages.productImagesFetched);
 +        }
 +
 +        [HttpPost]
 +        [ServiceFilter(typeof(ValidationFilterAttribute))]
-+        public async Task<IActionResult> CreateProductImage(Guid productId, [FromBody] ProductImageCreateDto createDto)
++        public async Task<IActionResult> CreatePlacardPhoto(Guid placardId, [FromBody] PlacardPhotoCreateDto createDto)
 +        {
-+            var result = await _service.ProductImageService.CreateProductImageAsync(productId, createDto);
++            var result = await _service.PlacardPhotoService.CreatePlacardPhotoAsync(placardId, createDto);
 +            return result.ToActionResult(ResponseMessages.productImageInserted);
 +        }
 +
 +        [HttpDelete("{imageId:guid}")]
-+        public async Task<IActionResult> DeleteProductImage(Guid productId, Guid imageId)
++        public async Task<IActionResult> DeletePlacardPhoto(Guid placardId, Guid imageId)
 +        {
-+            var result = await _service.ProductImageService.DeleteProductImageAsync(productId, imageId);
++            var result = await _service.PlacardPhotoService.DeletePlacardPhotoAsync(placardId, imageId);
 +            return result.ToActionResult(ResponseMessages.productImageDeleted);
 +        }
 +    }
@@ -153,17 +153,17 @@ index d8356aa..264fc17 100644
 @@ -9,6 +9,8 @@ namespace FileManager
          public MainProfile()
          {
-             CreateMap<Product, ProductDto>();
-+            CreateMap<ProductImage, ProductImageDto>();
-+            CreateMap<ProductImageCreateDto, ProductImage>();
+             CreateMap<Placard, PlacardDto>();
++            CreateMap<PlacardPhoto, PlacardPhotoDto>();
++            CreateMap<PlacardPhotoCreateDto, PlacardPhoto>();
              CreateMap<Scenario, DsmScenarioDetailDto>();
          }
      }
-diff --git a/backend/FileManager/Migrations/20260918101500_AddProductImageAltText.cs b/backend/FileManager/Migrations/20260918101500_AddProductImageAltText.cs
+diff --git a/backend/FileManager/Migrations/20260918101500_AddPlacardPhotoAltText.cs b/backend/FileManager/Migrations/20260918101500_AddPlacardPhotoAltText.cs
 new file mode 100644
 index 0000000..712f40e
 --- /dev/null
-+++ b/backend/FileManager/Migrations/20260918101500_AddProductImageAltText.cs
++++ b/backend/FileManager/Migrations/20260918101500_AddPlacardPhotoAltText.cs
 @@ -0,0 +1,29 @@
 +using Microsoft.EntityFrameworkCore.Migrations;
 +
@@ -172,14 +172,14 @@ index 0000000..712f40e
 +namespace FileManager.Migrations
 +{
 +    /// <inheritdoc />
-+    public partial class AddProductImageAltText : Migration
++    public partial class AddPlacardPhotoAltText : Migration
 +    {
 +        /// <inheritdoc />
 +        protected override void Up(MigrationBuilder migrationBuilder)
 +        {
 +            migrationBuilder.AddColumn<string>(
 +                name: "AltText",
-+                table: "ProductImages",
++                table: "PlacardPhotos",
 +                type: "nvarchar(200)",
 +                maxLength: 200,
 +                nullable: true);
@@ -190,15 +190,15 @@ index 0000000..712f40e
 +        {
 +            migrationBuilder.DropColumn(
 +                name: "AltText",
-+                table: "ProductImages");
++                table: "PlacardPhotos");
 +        }
 +    }
 +}
-diff --git a/backend/Repository/Configuration/ProductImageConfiguration.cs b/backend/Repository/Configuration/ProductImageConfiguration.cs
+diff --git a/backend/Repository/Configuration/PlacardPhotoConfiguration.cs b/backend/Repository/Configuration/PlacardPhotoConfiguration.cs
 new file mode 100644
 index 0000000..3df178a
 --- /dev/null
-+++ b/backend/Repository/Configuration/ProductImageConfiguration.cs
++++ b/backend/Repository/Configuration/PlacardPhotoConfiguration.cs
 @@ -0,0 +1,25 @@
 +using Entities.Models;
 +using Microsoft.EntityFrameworkCore;
@@ -206,9 +206,9 @@ index 0000000..3df178a
 +
 +namespace Repository.Configuration;
 +
-+public class ProductImageConfiguration : IEntityTypeConfiguration<ProductImage>
++public class PlacardPhotoConfiguration : IEntityTypeConfiguration<PlacardPhoto>
 +{
-+    public void Configure(EntityTypeBuilder<ProductImage> builder)
++    public void Configure(EntityTypeBuilder<PlacardPhoto> builder)
 +    {
 +        builder.HasKey(p => p.Id);
 +
@@ -216,20 +216,20 @@ index 0000000..3df178a
 +        builder.Property(p => p.AltText).HasMaxLength(200);
 +        builder.Property(p => p.IsActive).HasDefaultValue(true);
 +
-+        builder.HasOne<Product>()
++        builder.HasOne<Placard>()
 +            .WithMany()
-+            .HasForeignKey(p => p.ProductId)
++            .HasForeignKey(p => p.PlacardId)
 +            .OnDelete(DeleteBehavior.Cascade);
 +
-+        builder.HasIndex(p => new { p.ProductId, p.Url })
-+            .HasDatabaseName("IX_ProductImage_ProductId_Url");
++        builder.HasIndex(p => new { p.PlacardId, p.Url })
++            .HasDatabaseName("IX_PlacardPhoto_PlacardId_Url");
 +    }
 +}
-diff --git a/backend/Repository/ProductImageRepository.cs b/backend/Repository/ProductImageRepository.cs
+diff --git a/backend/Repository/PlacardPhotoRepository.cs b/backend/Repository/PlacardPhotoRepository.cs
 new file mode 100644
 index 0000000..41bfad5
 --- /dev/null
-+++ b/backend/Repository/ProductImageRepository.cs
++++ b/backend/Repository/PlacardPhotoRepository.cs
 @@ -0,0 +1,34 @@
 +using Contracts;
 +using Entities.Models;
@@ -237,32 +237,32 @@ index 0000000..41bfad5
 +
 +namespace Repository
 +{
-+    public class ProductImageRepository : RepositoryBase<ProductImage>, IProductImageRepository
++    public class PlacardPhotoRepository : RepositoryBase<PlacardPhoto>, IPlacardPhotoRepository
 +    {
-+        public ProductImageRepository(RepositoryContext repositoryContext) : base(repositoryContext)
++        public PlacardPhotoRepository(RepositoryContext repositoryContext) : base(repositoryContext)
 +        {
 +        }
 +
-+        public async Task<ProductImage?> GetProductImageByIdAsync(Guid id, bool trackChanges) =>
++        public async Task<PlacardPhoto?> GetPlacardPhotoByIdAsync(Guid id, bool trackChanges) =>
 +            await FindByCondition(p => p.Id == id && p.IsDeleted == false, trackChanges)
 +                .FirstOrDefaultAsync();
 +
-+        public async Task<List<ProductImage>> GetProductImagesAsync(Guid productId, bool trackChanges) =>
-+            await FindByCondition(p => p.ProductId == productId && p.IsActive && p.IsDeleted == false, trackChanges)
++        public async Task<List<PlacardPhoto>> GetPlacardPhotosAsync(Guid placardId, bool trackChanges) =>
++            await FindByCondition(p => p.PlacardId == placardId && p.IsActive && p.IsDeleted == false, trackChanges)
 +                .OrderBy(p => p.CreatedAt)
 +                .ToListAsync();
 +
-+        public async Task<List<ProductImage>> GetAllIncludingInactiveAsync(Guid productId, bool trackChanges) =>
-+            await FindByCondition(p => p.ProductId == productId && p.IsDeleted == false, trackChanges)
++        public async Task<List<PlacardPhoto>> GetAllIncludingInactiveAsync(Guid placardId, bool trackChanges) =>
++            await FindByCondition(p => p.PlacardId == placardId && p.IsDeleted == false, trackChanges)
 +                .ToListAsync();
 +
-+        public async Task<bool> UrlExistsAsync(Guid productId, string url) =>
-+            await FindByCondition(p => p.ProductId == productId && p.Url == url && p.IsDeleted == false, trackChanges: false)
++        public async Task<bool> UrlExistsAsync(Guid placardId, string url) =>
++            await FindByCondition(p => p.PlacardId == placardId && p.Url == url && p.IsDeleted == false, trackChanges: false)
 +                .AnyAsync();
 +
-+        public void CreateProductImage(ProductImage productImage) => Create(productImage);
++        public void CreatePlacardPhoto(PlacardPhoto productImage) => Create(productImage);
 +
-+        public void DeleteProductImage(ProductImage productImage) => Delete(productImage);
++        public void DeletePlacardPhoto(PlacardPhoto productImage) => Delete(productImage);
 +    }
 +}
 diff --git a/backend/Repository/RepositoryContext.cs b/backend/Repository/RepositoryContext.cs
@@ -272,8 +272,8 @@ index d508ae3..89c9aad 100644
 @@ -8,6 +8,7 @@ namespace Repository
          protected override void OnModelCreating(ModelBuilder modelBuilder)
          {
-             modelBuilder.ApplyConfiguration(new ProductConfiguration());
-+            modelBuilder.ApplyConfiguration(new ProductImageConfiguration());
+             modelBuilder.ApplyConfiguration(new PlacardConfiguration());
++            modelBuilder.ApplyConfiguration(new PlacardPhotoConfiguration());
              modelBuilder.ApplyConfiguration(new ScenarioStepConfiguration());
          }
      }
@@ -285,20 +285,20 @@ index 8de54b6..71d3f0d 100644
      public sealed class RepositoryManager : IRepositoryManager
      {
          private readonly RepositoryContext _repositoryContext;
-+        private readonly Lazy<IProductImageRepository> _productImageRepository;
-         private readonly Lazy<IProductRepository> _productRepository;
++        private readonly Lazy<IPlacardPhotoRepository> _productImageRepository;
+         private readonly Lazy<IPlacardRepository> _productRepository;
          private readonly Lazy<IScenarioRepository> _scenarioRepository;
  
          public RepositoryManager(RepositoryContext repositoryContext)
          {
              _repositoryContext = repositoryContext;
-+            _productImageRepository = new Lazy<IProductImageRepository>(() => new ProductImageRepository(repositoryContext));
-             _productRepository = new Lazy<IProductRepository>(() => new ProductRepository(repositoryContext));
++            _productImageRepository = new Lazy<IPlacardPhotoRepository>(() => new PlacardPhotoRepository(repositoryContext));
+             _productRepository = new Lazy<IPlacardRepository>(() => new PlacardRepository(repositoryContext));
              _scenarioRepository = new Lazy<IScenarioRepository>(() => new ScenarioRepository(repositoryContext));
          }
  
-+        public IProductImageRepository ProductImages => _productImageRepository.Value;
-         public IProductRepository Products => _productRepository.Value;
++        public IPlacardPhotoRepository PlacardPhotos => _productImageRepository.Value;
+         public IPlacardRepository Placards => _productRepository.Value;
          public IScenarioRepository Scenarios => _scenarioRepository.Value;
  
 diff --git a/backend/Service.Contracts/IServiceManager.cs b/backend/Service.Contracts/IServiceManager.cs
@@ -309,8 +309,8 @@ index e4aee4f..2ba2e58 100644
  {
      public interface IServiceManager
      {
-+        IProductImageService ProductImageService { get; }
-         IProductService ProductService { get; }
++        IPlacardPhotoService PlacardPhotoService { get; }
+         IPlacardService PlacardService { get; }
          IScenarioService ScenarioService { get; }
      }
 diff --git a/backend/Service/ActivityTypes.cs b/backend/Service/ActivityTypes.cs
@@ -321,16 +321,16 @@ index 3c9ee5e..95cfbb0 100644
      public static class ActivityTypes
      {
          public const string DsmScenarioCreated = "DsmScenarioCreated";
-+        public const string ProductImageCreated = "ProductImageCreated";
-+        public const string ProductImageDeleted = "ProductImageDeleted";
++        public const string PlacardPhotoCreated = "PlacardPhotoCreated";
++        public const string PlacardPhotoDeleted = "PlacardPhotoDeleted";
          public const string ProductUpdated = "ProductUpdated";
      }
  }
-diff --git a/backend/Service/ProductImageService.cs b/backend/Service/ProductImageService.cs
+diff --git a/backend/Service/PlacardPhotoService.cs b/backend/Service/PlacardPhotoService.cs
 new file mode 100644
 index 0000000..5d51378
 --- /dev/null
-+++ b/backend/Service/ProductImageService.cs
++++ b/backend/Service/PlacardPhotoService.cs
 @@ -0,0 +1,87 @@
 +using Ardalis.Result;
 +using AutoMapper;
@@ -344,7 +344,7 @@ index 0000000..5d51378
 +
 +namespace Service
 +{
-+    public class ProductImageService : IProductImageService
++    public class PlacardPhotoService : IPlacardPhotoService
 +    {
 +        private readonly IRepositoryManager _repository;
 +        private readonly IMapper _mapper;
@@ -352,7 +352,7 @@ index 0000000..5d51378
 +        private readonly ISystemActivityService _systemActivityService;
 +        private readonly string _cdnBaseUrl;
 +
-+        public ProductImageService(
++        public PlacardPhotoService(
 +            IRepositoryManager repository,
 +            IMapper mapper,
 +            ILoggedInUserService loggedInUserService,
@@ -363,46 +363,46 @@ index 0000000..5d51378
 +            _mapper = mapper;
 +            _loggedInUserService = loggedInUserService;
 +            _systemActivityService = systemActivityService;
-+            _cdnBaseUrl = configuration["ProductImages:CdnBaseUrl"] ?? string.Empty;
++            _cdnBaseUrl = configuration["PlacardPhotos:CdnBaseUrl"] ?? string.Empty;
 +        }
 +
-+        public async Task<Result<List<ProductImageDto>>> GetProductImagesAsync(Guid productId)
++        public async Task<Result<List<PlacardPhotoDto>>> GetPlacardPhotosAsync(Guid placardId)
 +        {
-+            var images = await _repository.ProductImages.GetProductImagesAsync(productId, trackChanges: false);
-+            return _mapper.Map<List<ProductImageDto>>(images);
++            var images = await _repository.PlacardPhotos.GetPlacardPhotosAsync(placardId, trackChanges: false);
++            return _mapper.Map<List<PlacardPhotoDto>>(images);
 +        }
 +
-+        public async Task<Result<ProductImageDto>> CreateProductImageAsync(Guid productId, ProductImageCreateDto createDto)
++        public async Task<Result<PlacardPhotoDto>> CreatePlacardPhotoAsync(Guid placardId, PlacardPhotoCreateDto createDto)
 +        {
-+            var product = await _repository.Products.GetProductByIdAsync(productId, trackChanges: false);
++            var product = await _repository.Placards.GetPlacardByIdAsync(placardId, trackChanges: false);
 +            if (product is null)
 +                return Result.NotFound();
 +
-+            if (await _repository.ProductImages.UrlExistsAsync(productId, createDto.Url))
++            if (await _repository.PlacardPhotos.UrlExistsAsync(placardId, createDto.Url))
 +                return Result.Invalid(new ValidationError(ResponseMessages.productImageDuplicateUrl));
 +
-+            var image = _mapper.Map<ProductImage>(createDto);
-+            image.ProductId = productId;
++            var image = _mapper.Map<PlacardPhoto>(createDto);
++            image.PlacardId = placardId;
 +            image.IsActive = true;
 +            image.CreatedBy = _loggedInUserService.UserId;
 +
-+            _repository.ProductImages.CreateProductImage(image);
++            _repository.PlacardPhotos.CreatePlacardPhoto(image);
 +            await _repository.SaveAsync();
 +
 +            await _systemActivityService.LogEntityAsync(
-+                ActivityTypes.ProductImageCreated,
++                ActivityTypes.PlacardPhotoCreated,
 +                image.Id,
-+                ("ProductId", productId.ToString()),
++                ("PlacardId", placardId.ToString()),
 +                ("Url", image.Url));
 +
-+            var created = await _repository.ProductImages.GetProductImageByIdAsync(image.Id, trackChanges: false);
-+            return _mapper.Map<ProductImageDto>(created);
++            var created = await _repository.PlacardPhotos.GetPlacardPhotoByIdAsync(image.Id, trackChanges: false);
++            return _mapper.Map<PlacardPhotoDto>(created);
 +        }
 +
-+        public async Task<Result> DeleteProductImageAsync(Guid productId, Guid imageId)
++        public async Task<Result> DeletePlacardPhotoAsync(Guid placardId, Guid imageId)
 +        {
-+            var image = await _repository.ProductImages.GetProductImageByIdAsync(imageId, trackChanges: true);
-+            if (image is null || image.ProductId != productId)
++            var image = await _repository.PlacardPhotos.GetPlacardPhotoByIdAsync(imageId, trackChanges: true);
++            if (image is null || image.PlacardId != placardId)
 +                return Result.NotFound();
 +
 +            image.IsDeleted = true;
@@ -410,9 +410,9 @@ index 0000000..5d51378
 +            await _repository.SaveAsync();
 +
 +            await _systemActivityService.LogEntityAsync(
-+                ActivityTypes.ProductImageDeleted,
++                ActivityTypes.PlacardPhotoDeleted,
 +                image.Id,
-+                ("ProductId", productId.ToString()),
++                ("PlacardId", placardId.ToString()),
 +                ("OldUrl", image.Url));
 +
 +            return Result.Success();
@@ -433,8 +433,8 @@ index b1ffb5e..419e950 100644
  {
      public sealed class ServiceManager : IServiceManager
      {
-+        private readonly Lazy<IProductImageService> _productImageService;
-         private readonly Lazy<IProductService> _productService;
++        private readonly Lazy<IPlacardPhotoService> _productImageService;
+         private readonly Lazy<IPlacardService> _productService;
          private readonly Lazy<IScenarioService> _scenarioService;
          private readonly Lazy<ISystemActivityService> _systemActivityService;
  
@@ -442,35 +442,35 @@ index b1ffb5e..419e950 100644
 +        public ServiceManager(IRepositoryManager repository, IMapper mapper, ILoggedInUserService loggedInUserService, IConfiguration configuration)
          {
              _systemActivityService = new Lazy<ISystemActivityService>(() => new SystemActivityService(repository, loggedInUserService));
-+            _productImageService = new Lazy<IProductImageService>(() => new ProductImageService(repository, mapper, loggedInUserService, _systemActivityService.Value, configuration));
-             _productService = new Lazy<IProductService>(() => new ProductService(repository, mapper, _systemActivityService.Value));
++            _productImageService = new Lazy<IPlacardPhotoService>(() => new PlacardPhotoService(repository, mapper, loggedInUserService, _systemActivityService.Value, configuration));
+             _productService = new Lazy<IPlacardService>(() => new PlacardService(repository, mapper, _systemActivityService.Value));
              _scenarioService = new Lazy<IScenarioService>(() => new ScenarioService(repository, mapper, _systemActivityService.Value));
          }
  
-+        public IProductImageService ProductImageService => _productImageService.Value;
-         public IProductService ProductService => _productService.Value;
++        public IPlacardPhotoService PlacardPhotoService => _productImageService.Value;
+         public IPlacardService PlacardService => _productService.Value;
          public IScenarioService ScenarioService => _scenarioService.Value;
      }
-diff --git a/backend/Shared/DataTransferObjects/ProductImageDtos.cs b/backend/Shared/DataTransferObjects/ProductImageDtos.cs
+diff --git a/backend/Shared/DataTransferObjects/PlacardPhotoDtos.cs b/backend/Shared/DataTransferObjects/PlacardPhotoDtos.cs
 new file mode 100644
 index 0000000..afd3e48
 --- /dev/null
-+++ b/backend/Shared/DataTransferObjects/ProductImageDtos.cs
++++ b/backend/Shared/DataTransferObjects/PlacardPhotoDtos.cs
 @@ -0,0 +1,33 @@
 +using System.ComponentModel.DataAnnotations;
 +
 +namespace Shared.DataTransferObjects
 +{
-+    public class ProductImageDto
++    public class PlacardPhotoDto
 +    {
 +        public Guid Id { get; set; }
-+        public Guid ProductId { get; set; }
++        public Guid PlacardId { get; set; }
 +        public string Url { get; set; } = string.Empty;
 +        public string? AltText { get; set; }
 +        public bool IsActive { get; set; }
 +    }
 +
-+    public class ProductImageCreateDto
++    public class PlacardPhotoCreateDto
 +    {
 +        [Required(ErrorMessage = "Url is required")]
 +        [MaxLength(2048, ErrorMessage = "Url cannot exceed 2048 characters")]
@@ -480,7 +480,7 @@ index 0000000..afd3e48
 +        public string? AltText { get; set; }
 +    }
 +
-+    public class ProductImageUpdateDto
++    public class PlacardPhotoUpdateDto
 +    {
 +        [Required(ErrorMessage = "Url is required")]
 +        [MaxLength(2048, ErrorMessage = "Url cannot exceed 2048 characters")]

@@ -1,46 +1,46 @@
-diff --git a/backend/Entities/Models/ProductImage.cs b/backend/Entities/Models/ProductImage.cs
+diff --git a/backend/Entities/Models/PlacardPhoto.cs b/backend/Entities/Models/PlacardPhoto.cs
 index 682f55f..b7abdce 100644
---- a/backend/Entities/Models/ProductImage.cs
-+++ b/backend/Entities/Models/ProductImage.cs
+--- a/backend/Entities/Models/PlacardPhoto.cs
++++ b/backend/Entities/Models/PlacardPhoto.cs
 @@ -7,6 +7,7 @@ namespace Entities.Models
          public Guid Id { get; set; }
-         public Guid ProductId { get; set; }
+         public Guid PlacardId { get; set; }
          public string Url { get; set; } = string.Empty;
 +        public string AltText { get; set; } = string.Empty;
          public bool IsActive { get; set; }
          public bool IsDeleted { get; set; }
          public string? CreatedBy { get; set; }
-diff --git a/backend/FileManager.Presentation/Controllers/ProductController.cs b/backend/FileManager.Presentation/Controllers/ProductController.cs
+diff --git a/backend/FileManager.Presentation/Controllers/PlacardController.cs b/backend/FileManager.Presentation/Controllers/PlacardController.cs
 index a49802e..8fdfb2a 100644
---- a/backend/FileManager.Presentation/Controllers/ProductController.cs
-+++ b/backend/FileManager.Presentation/Controllers/ProductController.cs
+--- a/backend/FileManager.Presentation/Controllers/PlacardController.cs
++++ b/backend/FileManager.Presentation/Controllers/PlacardController.cs
 @@ -9,7 +9,20 @@ namespace FileManager.Presentation.Controllers
      {
          private readonly IServiceManager _service;
  
--        public ProductController(IServiceManager service) => _service = service;
+-        public PlacardController(IServiceManager service) => _service = service;
 +        private readonly IRepositoryManager _repository;
 +
-+        public ProductController(IServiceManager service, IRepositoryManager repository)
++        public PlacardController(IServiceManager service, IRepositoryManager repository)
 +        {
 +            _service = service;
 +            _repository = repository;
 +        }
 +
 +        [HttpGet("{id:guid}/images")]
-+        public async Task<ActionResult<List<ProductImage>>> GetProductImages(Guid id)
++        public async Task<ActionResult<List<PlacardPhoto>>> GetPlacardPhotos(Guid id)
 +        {
-+            var images = _repository.ProductImages.FindAll(false).Where(i => i.ProductId == id).ToList();
++            var images = _repository.PlacardPhotos.FindAll(false).Where(i => i.PlacardId == id).ToList();
 +            return Ok(images);
 +        }
  
          [HttpGet("{id:guid}")]
-         public async Task<IActionResult> GetProduct(Guid id)
-diff --git a/backend/FileManager.Presentation/Controllers/ProductImageController.cs b/backend/FileManager.Presentation/Controllers/ProductImageController.cs
+         public async Task<IActionResult> GetPlacard(Guid id)
+diff --git a/backend/FileManager.Presentation/Controllers/PlacardPhotoController.cs b/backend/FileManager.Presentation/Controllers/PlacardPhotoController.cs
 new file mode 100644
 index 0000000..c4ed0cd
 --- /dev/null
-+++ b/backend/FileManager.Presentation/Controllers/ProductImageController.cs
++++ b/backend/FileManager.Presentation/Controllers/PlacardPhotoController.cs
 @@ -0,0 +1,22 @@
 +using Microsoft.AspNetCore.Mvc;
 +using Service.Contracts;
@@ -50,25 +50,25 @@ index 0000000..c4ed0cd
 +{
 +    [Route("api/v2/[controller]")]
 +    [ApiController]
-+    public class ProductImageController : ControllerBase
++    public class PlacardPhotoController : ControllerBase
 +    {
 +        private readonly IServiceManager _service;
 +
-+        public ProductImageController(IServiceManager service) => _service = service;
++        public PlacardPhotoController(IServiceManager service) => _service = service;
 +
 +        [HttpPost]
-+        public async Task<IActionResult> CreateProductImage([FromBody] ProductImageDto createDto)
++        public async Task<IActionResult> CreatePlacardPhoto([FromBody] PlacardPhotoDto createDto)
 +        {
-+            var result = await _service.ProductImageService.CreateProductImageAsync(createDto);
-+            return Ok(new CoreResponseModel().GetSuccessResponse(result, "Product image created"));
++            var result = await _service.PlacardPhotoService.CreatePlacardPhotoAsync(createDto);
++            return Ok(new CoreResponseModel().GetSuccessResponse(result, "Placard image created"));
 +        }
 +    }
 +}
-diff --git a/backend/Repository/Configuration/ProductImageConfiguration.cs b/backend/Repository/Configuration/ProductImageConfiguration.cs
+diff --git a/backend/Repository/Configuration/PlacardPhotoConfiguration.cs b/backend/Repository/Configuration/PlacardPhotoConfiguration.cs
 new file mode 100644
 index 0000000..974486b
 --- /dev/null
-+++ b/backend/Repository/Configuration/ProductImageConfiguration.cs
++++ b/backend/Repository/Configuration/PlacardPhotoConfiguration.cs
 @@ -0,0 +1,15 @@
 +using Entities.Models;
 +using Microsoft.EntityFrameworkCore;
@@ -76,20 +76,20 @@ index 0000000..974486b
 +
 +namespace Repository.Configuration;
 +
-+public class ProductImageConfiguration : IEntityTypeConfiguration<ProductImage>
++public class PlacardPhotoConfiguration : IEntityTypeConfiguration<PlacardPhoto>
 +{
-+    public void Configure(EntityTypeBuilder<ProductImage> builder)
++    public void Configure(EntityTypeBuilder<PlacardPhoto> builder)
 +    {
 +        builder.HasKey(p => p.Id);
 +        builder.Property(p => p.Url).IsRequired().HasMaxLength(2048);
-+        builder.HasIndex(p => p.ProductId).HasDatabaseName("IX_ProductImage_ProductId");
++        builder.HasIndex(p => p.PlacardId).HasDatabaseName("IX_PlacardPhoto_PlacardId");
 +    }
 +}
-diff --git a/backend/Repository/ProductImageRepository.cs b/backend/Repository/ProductImageRepository.cs
+diff --git a/backend/Repository/PlacardPhotoRepository.cs b/backend/Repository/PlacardPhotoRepository.cs
 new file mode 100644
 index 0000000..c0df0b2
 --- /dev/null
-+++ b/backend/Repository/ProductImageRepository.cs
++++ b/backend/Repository/PlacardPhotoRepository.cs
 @@ -0,0 +1,24 @@
 +using Contracts;
 +using Entities.Models;
@@ -97,29 +97,29 @@ index 0000000..c0df0b2
 +
 +namespace Repository
 +{
-+    public class ProductImageRepository : RepositoryBase<ProductImage>, IProductImageRepository
++    public class PlacardPhotoRepository : RepositoryBase<PlacardPhoto>, IPlacardPhotoRepository
 +    {
-+        public ProductImageRepository(RepositoryContext repositoryContext) : base(repositoryContext)
++        public PlacardPhotoRepository(RepositoryContext repositoryContext) : base(repositoryContext)
 +        {
 +        }
 +
-+        public async Task<ProductImage?> GetProductImageByIdAsync(Guid id, bool trackChanges) =>
++        public async Task<PlacardPhoto?> GetPlacardPhotoByIdAsync(Guid id, bool trackChanges) =>
 +            await FindByCondition(p => p.Id == id, trackChanges).FirstOrDefaultAsync();
 +
-+        public async Task<List<ProductImage>> GetProductImagesAsync(Guid productId, bool trackChanges) =>
-+            await FindByCondition(p => p.ProductId == productId, trackChanges).ToListAsync();
++        public async Task<List<PlacardPhoto>> GetPlacardPhotosAsync(Guid placardId, bool trackChanges) =>
++            await FindByCondition(p => p.PlacardId == placardId, trackChanges).ToListAsync();
 +
-+        public void CreateProductImage(ProductImage productImage) => Create(productImage);
++        public void CreatePlacardPhoto(PlacardPhoto productImage) => Create(productImage);
 +
-+        public void DeleteProductImage(ProductImage productImage) =>
++        public void DeletePlacardPhoto(PlacardPhoto productImage) =>
 +            throw new NotImplementedException("Use the bulk upsert path instead");
 +    }
 +}
-diff --git a/backend/Service/ProductImageService.cs b/backend/Service/ProductImageService.cs
+diff --git a/backend/Service/PlacardPhotoService.cs b/backend/Service/PlacardPhotoService.cs
 new file mode 100644
 index 0000000..1b79afd
 --- /dev/null
-+++ b/backend/Service/ProductImageService.cs
++++ b/backend/Service/PlacardPhotoService.cs
 @@ -0,0 +1,148 @@
 +using System.Text;
 +using System.Xml.Linq;
@@ -132,7 +132,7 @@ index 0000000..1b79afd
 +
 +namespace Service
 +{
-+    public class ProductImageService : IProductImageService
++    public class PlacardPhotoService : IPlacardPhotoService
 +    {
 +        private const int CacheSeconds = 86400;
 +
@@ -140,27 +140,27 @@ index 0000000..1b79afd
 +        private readonly IMapper _mapper;
 +        private readonly ISystemActivityService _systemActivityService;
 +
-+        public ProductImageService(IRepositoryManager repository, IMapper mapper, ISystemActivityService systemActivityService)
++        public PlacardPhotoService(IRepositoryManager repository, IMapper mapper, ISystemActivityService systemActivityService)
 +        {
 +            _repository = repository;
 +            _mapper = mapper;
 +            _systemActivityService = systemActivityService;
 +        }
 +
-+        public async Task<Result<ProductImageDto>> CreateProductImageAsync(ProductImageDto createDto)
++        public async Task<Result<PlacardPhotoDto>> CreatePlacardPhotoAsync(PlacardPhotoDto createDto)
 +        {
-+            var entity = _mapper.Map<ProductImage>(createDto);
++            var entity = _mapper.Map<PlacardPhoto>(createDto);
 +            entity.CreatedAt = DateTime.UtcNow;
 +
-+            _repository.ProductImages.CreateProductImage(entity);
++            _repository.PlacardPhotos.CreatePlacardPhoto(entity);
 +            await _repository.SaveAsync();
 +
-+            return _mapper.Map<ProductImageDto>(entity);
++            return _mapper.Map<PlacardPhotoDto>(entity);
 +        }
 +
-+        public async Task<Result<ProductImageDto>> UpdateProductImageAsync(Guid id, ProductImageDto updateDto)
++        public async Task<Result<PlacardPhotoDto>> UpdatePlacardPhotoAsync(Guid id, PlacardPhotoDto updateDto)
 +        {
-+            var entity = await _repository.ProductImages.GetProductImageByIdAsync(id, true);
++            var entity = await _repository.PlacardPhotos.GetPlacardPhotoByIdAsync(id, true);
 +            if (entity is null)
 +                return Result.NotFound();
 +
@@ -168,21 +168,21 @@ index 0000000..1b79afd
 +            await _repository.SaveAsync();
 +
 +            var info = new List<KeyValuePair<string, string>> { new("EntityId", id.ToString()) };
-+            await _systemActivityService.OnActivityAsync("ProductImageUpdated", info);
++            await _systemActivityService.OnActivityAsync("PlacardPhotoUpdated", info);
 +
-+            return _mapper.Map<ProductImageDto>(entity);
++            return _mapper.Map<PlacardPhotoDto>(entity);
 +        }
 +
-+        public async Task<Result> RemoveProductImageAsync(Guid id)
++        public async Task<Result> RemovePlacardPhotoAsync(Guid id)
 +        {
-+            var entity = await _repository.ProductImages.GetProductImageByIdAsync(id, true);
++            var entity = await _repository.PlacardPhotos.GetPlacardPhotoByIdAsync(id, true);
 +            if (entity is null)
 +                return Result.NotFound();
 +
-+            _repository.ProductImages.DeleteProductImage(entity);
++            _repository.PlacardPhotos.DeletePlacardPhoto(entity);
 +            await _repository.SaveAsync();
 +
-+            _systemActivityService.AddActivity(new SystemActivityArgs(ActivityTypes.ProductImageDeleted, id));
++            _systemActivityService.AddActivity(new SystemActivityArgs(ActivityTypes.PlacardPhotoDeleted, id));
 +            return Result.Success();
 +        }
 +
@@ -194,17 +194,17 @@ index 0000000..1b79afd
 +            return Task.FromResult(cost);
 +        }
 +
-+        public async Task<Result<List<ProductImageDto>>> UpsertProductImagesAsync(Guid productId, List<ProductImageDto> images)
++        public async Task<Result<List<PlacardPhotoDto>>> UpsertPlacardPhotosAsync(Guid placardId, List<PlacardPhotoDto> images)
 +        {
 +            if (images is null || images.Count == 0)
 +                return Result.Invalid(new ValidationError("No images supplied"));
 +
-+            var product = _repository.Products.GetProductByIdAsync(productId, false).Result;
++            var product = _repository.Placards.GetPlacardByIdAsync(placardId, false).Result;
 +            if (product is null)
 +                return Result.NotFound();
 +
-+            var existing = await _repository.ProductImages.GetProductImagesAsync(productId, true);
-+            var results = new List<ProductImageDto>();
++            var existing = await _repository.PlacardPhotos.GetPlacardPhotosAsync(placardId, true);
++            var results = new List<PlacardPhotoDto>();
 +
 +            foreach (var image in images)
 +            {
@@ -217,23 +217,23 @@ index 0000000..1b79afd
 +                var match = existing.FirstOrDefault(e => e.Id == image.Id);
 +                if (match is null)
 +                {
-+                    var created = new ProductImage
++                    var created = new PlacardPhoto
 +                    {
 +                        Id = Guid.NewGuid(),
-+                        ProductId = productId,
++                        PlacardId = placardId,
 +                        Url = image.Url,
 +                        IsActive = true,
 +                        CreatedAt = DateTime.UtcNow,
 +                    };
 +
-+                    _repository.ProductImages.CreateProductImage(created);
-+                    results.Add(_mapper.Map<ProductImageDto>(created));
++                    _repository.PlacardPhotos.CreatePlacardPhoto(created);
++                    results.Add(_mapper.Map<PlacardPhotoDto>(created));
 +                }
 +                else
 +                {
 +                    match.Url = image.Url;
 +                    match.LastModified = DateTime.UtcNow;
-+                    results.Add(_mapper.Map<ProductImageDto>(match));
++                    results.Add(_mapper.Map<PlacardPhotoDto>(match));
 +                }
 +            }
 +
@@ -247,11 +247,11 @@ index 0000000..1b79afd
 +
 +            var info = new List<KeyValuePair<string, string>>
 +            {
-+                new("EntityId", productId.ToString()),
++                new("EntityId", placardId.ToString()),
 +                new("Count", results.Count.ToString()),
 +                new("CacheSeconds", CacheSeconds.ToString()),
 +            };
-+            await _systemActivityService.OnActivityAsync(ActivityTypes.ProductImagesUpserted, info);
++            await _systemActivityService.OnActivityAsync(ActivityTypes.PlacardPhotosUpserted, info);
 +
 +            return results;
 +        }
@@ -269,12 +269,12 @@ index 0000000..1b79afd
 +        }
 +    }
 +}
-diff --git a/backend/Shared/DataTransferObjects/ProductGalleryDto.cs b/backend/Shared/DataTransferObjects/ProductGalleryDto.cs
+diff --git a/backend/Shared/DataTransferObjects/PlacardGalleryDto.cs b/backend/Shared/DataTransferObjects/PlacardGalleryDto.cs
 index c0a66c2..85a20af 100644
---- a/backend/Shared/DataTransferObjects/ProductGalleryDto.cs
-+++ b/backend/Shared/DataTransferObjects/ProductGalleryDto.cs
+--- a/backend/Shared/DataTransferObjects/PlacardGalleryDto.cs
++++ b/backend/Shared/DataTransferObjects/PlacardGalleryDto.cs
 @@ -3,7 +3,7 @@ namespace Shared.DataTransferObjects
-     public class ProductGalleryDto
+     public class PlacardGalleryDto
      {
          public Guid Id { get; set; }
 -        public string ImageUrl { get; set; } = string.Empty;
@@ -282,28 +282,28 @@ index c0a66c2..85a20af 100644
          public int SortOrder { get; set; }
      }
  }
-diff --git a/backend/Shared/DataTransferObjects/ProductImageDto.cs b/backend/Shared/DataTransferObjects/ProductImageDto.cs
+diff --git a/backend/Shared/DataTransferObjects/PlacardPhotoDto.cs b/backend/Shared/DataTransferObjects/PlacardPhotoDto.cs
 new file mode 100644
 index 0000000..e1ea51b
 --- /dev/null
-+++ b/backend/Shared/DataTransferObjects/ProductImageDto.cs
++++ b/backend/Shared/DataTransferObjects/PlacardPhotoDto.cs
 @@ -0,0 +1,9 @@
 +namespace Shared.DataTransferObjects
 +{
-+    public record ProductImageDto
++    public record PlacardPhotoDto
 +    {
 +        public Guid Id { get; init; }
-+        public Guid ProductId { get; init; }
++        public Guid PlacardId { get; init; }
 +        public string Url { get; init; }
 +    }
 +}
-diff --git a/frontend/apps/client/src/app/product/product-gallery.component.ts b/frontend/apps/client/src/app/product/product-gallery.component.ts
+diff --git a/frontend/apps/client/src/app/product/placard-gallery.component.ts b/frontend/apps/client/src/app/product/placard-gallery.component.ts
 index e3a4860..8a1d72e 100644
---- a/frontend/apps/client/src/app/product/product-gallery.component.ts
-+++ b/frontend/apps/client/src/app/product/product-gallery.component.ts
-@@ -9,4 +9,5 @@ import { ProductGallery } from './product-gallery.models';
+--- a/frontend/apps/client/src/app/product/placard-gallery.component.ts
++++ b/frontend/apps/client/src/app/product/placard-gallery.component.ts
+@@ -9,4 +9,5 @@ import { PlacardGallery } from './placard-gallery.models';
  })
- export class ProductGalleryComponent {
-   readonly images = input.required<ProductGallery[]>();
+ export class PlacardGalleryComponent {
+   readonly images = input.required<PlacardGallery[]>();
 +  readonly showCaptions = input(false);
  }
