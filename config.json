@@ -5,5 +5,35 @@
   },
   "stamp": {
     "pruneDays": 30
+  },
+  "bitwarden": {
+    "project": "Work",
+    "tokenFile": "C:/Users/Administrator/.local/bws-token-personal.dpapi"
+  },
+  "asana": {
+    "workspace": "1209040875779194",
+    "project": "1209042358568959",
+    "sections": {
+      "inProgress": "1209042456419716",
+      "qa": "1209042456419718",
+      "qaCompleted": "1215791320211211"
+    },
+    "qaReviewer": {
+      "name": "Syed Aqil Shah",
+      "gid": "1213187391484366"
+    }
+  },
+  "preview": {
+    "api": "https://pr-{n}-api.dev.thportal.ca",
+    "app": "https://pr-{n}.dev.thportal.ca"
+  },
+  "qa": {
+    "baseUrl": "http://localhost:5237",
+    "bootTimeoutMs": 180000,
+    "login": {
+      "path": "/api/v2/authentication/login",
+      "email": "devdevelopment@zayantechnologies.com",
+      "password": "Admin@123"
+    }
   }
 }

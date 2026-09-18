@@ -288,6 +288,13 @@ Running `/ship` is the developer's explicit go-ahead to push. Claude never pushe
    rerun the `API` cases there. If the preview does not come up, continue with the local results and
    say so.
 5. **Asana — only after the developer approves the text.** Nothing is posted automatically.
+
+   The ERP board already carries the fields this step would otherwise bury in a comment (confirmed on
+   2026-09-18 by reading a real ticket): **Branch name**, **Preview Url**, **Backend Dev**,
+   **Backend Status**, plus Module, Priority and Urgency. `/ship` fills `Branch name` and
+   `Preview Url` as custom fields as well as naming them in the comment, so the board stays sortable
+   and QA does not have to open a comment thread to find the preview.
+
    - Print the exact comment that would go to the ticket: the branch, the preview URL
      `https://pr-<N>.dev.thportal.ca`, the PR link, the QA case table, the verification results, any
      waivers, and the mention of Aqil.
