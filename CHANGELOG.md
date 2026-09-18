@@ -1,5 +1,30 @@
 # Changelog
 
+## 0.4.0 — 2026-09-18
+
+- **`/ticket`** — reads an Asana task and its comments, creates and links the branch, explores the
+  code that already exists, then writes `ticket.md`, `plan.md` and `qa-cases.json` into
+  `.claude/work/<gid>/` and stops for approval. Proven on a real ticket, where it found that three of
+  the five acceptance criteria did not survive contact with the code.
+- **QA cases that run.** `qa-cases.json` is a schema a machine executes: `api` cases carry a route, a
+  method and a concrete expectation; `ui` cases carry steps for QA and are never executed.
+- **The QA runner** boots the API against a **throwaway SQL Server container**, migrates it from
+  empty, logs in and calls each case's real route, recording the evidence and the database used.
+- **`/validate` runs the in-scope cases** before it stamps, and a failed case fails the stamp — so the
+  commit stays blocked. No ticket link means `qa: { skipped: … }` rather than a silent pass.
+- **Secrets** resolve from the environment first, then Bitwarden by key name; nothing is written to
+  disk or into a stamp.
+- **A database guard**: `docker/connection-string.mjs` silently falls back to the shared
+  `erp-development` box when a branch database does not exist, and the API applies migrations on
+  startup. `erp-development`, `erp-staging*`, `thportal_staging`, `erp`, `crm` and `thportal_pr_*` are
+  refused outright.
+- A crashed API now fails in seconds with its own output, instead of waiting out the boot timeout.
+
+Three bugs found by running it rather than reading it: the shared-database fallback above; `sqlcmd`
+exiting 0 on a failed statement, which made a broken `UPDATE` look successful (fixed with `-b`); and
+that same statement needing `QUOTED_IDENTIFIER ON` for this schema's filtered indexes (fixed with
+`-I`).
+
 ## 0.3.0 — 2026-09-18
 
 - **The commit gate.** A `backend/` commit is refused unless a passing stamp exists for its exact

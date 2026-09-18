@@ -54,7 +54,31 @@ If the developer disputes a finding and is right, the rules file is what needs f
 they want to proceed anyway, add `"waived": true` and a short `"waivedReason"` to that finding in
 `review.json`. Waivers are recorded in the stamp and belong in the PR description.
 
-## Step 5: Stamp
+## Step 5: The QA cases run themselves
+
+When the branch is linked to a ticket and `.claude/work/<gid>/qa-cases.json` exists, the stamp step
+runs the in-scope `api` cases over real HTTP before it writes anything:
+
+- it starts a **throwaway SQL Server container**, because the API applies migrations to whatever
+  database it is given and nobody's data should be migrated by a QA run;
+- it boots the API against that container, turns off two-factor for the seeded user in it, logs in,
+  and calls each case's real route;
+- every case records its evidence (`GET /api/v2/... -> 200`) and the database it ran against;
+- a failed case fails the stamp, so the commit stays blocked.
+
+No ticket link, or no cases file, and the stamp says so — `qa: { skipped: … }` — rather than implying
+the cases passed. `ui` cases are never executed; they belong to QA.
+
+To run them on their own, without stamping:
+
+```bash
+node .claude/guardrails/scripts/qa-verify.mjs --work .claude/work/<gid>
+```
+
+`--base-url <url>` runs them against an API you already have running, and `--db "<connection string>"`
+against a database you name. The guard refuses shared databases either way.
+
+## Step 6: Stamp
 
 ```bash
 node .claude/guardrails/scripts/validate.mjs --stamp "$SCRATCH/review.json"
@@ -64,7 +88,7 @@ The checks are not run twice: Step 2 cached its result against this exact staged
 stamp reuses it. If the staged content changed in between — a file edited during the review — the
 checks run again, which is the point.
 
-## Step 6: Report
+## Step 7: Report
 
 Give the developer:
 

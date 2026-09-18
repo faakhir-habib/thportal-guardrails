@@ -58,14 +58,16 @@ block, and leaves your stamps and the bundle clone alone.
 | `/validate` | Formats the staged `.cs` files, builds, runs the integration suite, reviews the staged diff, and stamps the result |
 | The commit gate | A `backend/` commit without a passing stamp for its exact staged content is refused. Frontend-only and merge commits pass through untouched |
 | Commit message rules | Conventional header, a body saying why, the `Asana:` trailer from the branch's ticket link, and no Claude attribution |
+| `/ticket <asana>` | Reads the task, links the branch, and writes the QA cases and the plan for you to approve |
+| QA cases | Run over real HTTP against a throwaway SQL container during `/validate`; a failed case blocks the commit |
 
 **How long validation takes** — measured on this repo: format 19s (staged files only), build 99s,
 integration suite 221s. About **five and a half minutes** in total. Stamping straight afterwards
 reuses that result, so it costs nothing twice.
 
-**Still to come** — `/ticket`, `/ship` and `/learn`: reading the ticket, writing and verifying QA
-cases, opening the PR, and posting to Asana once the developer has approved the text. Until they
-land, do the ticket and QA steps by hand.
+**Still to come** — `/ship` and `/learn`: opening the PR, verifying on the preview environment, and
+posting to Asana once the developer has approved the text. Until they land, do the PR and Asana steps
+by hand.
 
 ## Requirements
 
@@ -77,18 +79,18 @@ land, do the ticket and QA steps by hand.
 
 ```
 rules/          the single source of backend rules
-skills/         /thportal-review and /validate
+skills/         /thportal-review, /validate and /ticket
 agents/         the read-only architecture reviewer
 githooks/       pre-commit, prepare-commit-msg, commit-msg
-scripts/        the gate, the checks, the stamp, the Claude Code hooks, install and uninstall
+scripts/        the gate, the checks, the stamp, the QA runner, the Claude Code hooks, install and uninstall
 claude/         the CLAUDE.md files and the settings merged into the clone
 eval/           the fixtures the reviewer is measured against
 tests/          node --test units, plus hooks.test.sh which drives real commits
 docs/           design.md and the implementation plans
 ```
 
-Run the tests with `node --test "tests/*.test.mjs"` (25 of them) and `sh tests/hooks.test.sh`, which
+Run the tests with `node --test "tests/*.test.mjs"` (51 of them) and `sh tests/hooks.test.sh`, which
 drives real commits through the real hooks in a throwaway repo (9 cases). Quote the glob — a bare
 `tests/` is read as a module path, not a directory.
 
-Status: rules, reviewer, review skill, /validate and the commit gate are in place and proven on the real repository. Version 0.3.0 — see CHANGELOG.md.
+Status: rules, reviewer, /validate, the commit gate, /ticket and the QA runner are in place and proven on the real repository. Version 0.4.0 — see CHANGELOG.md.
