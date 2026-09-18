@@ -1,0 +1,9 @@
+{
+  "gate": {
+    "enabled": true,
+    "requireTicket": false
+  },
+  "stamp": {
+    "pruneDays": 30
+  }
+}
