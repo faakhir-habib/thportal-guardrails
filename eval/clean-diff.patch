@@ -1,0 +1,492 @@
+diff --git a/backend/Contracts/IRepositoryManager.cs b/backend/Contracts/IRepositoryManager.cs
+index a8f1eb7..2a2fb92 100644
+--- a/backend/Contracts/IRepositoryManager.cs
++++ b/backend/Contracts/IRepositoryManager.cs
+@@ -2,6 +2,7 @@ namespace Contracts
+ {
+     public interface IRepositoryManager
+     {
++        IProductImageRepository ProductImages { get; }
+         IProductRepository Products { get; }
+         IScenarioRepository Scenarios { get; }
+ 
+diff --git a/backend/Entities/Models/ProductImage.cs b/backend/Entities/Models/ProductImage.cs
+index 682f55f..e60d545 100644
+--- a/backend/Entities/Models/ProductImage.cs
++++ b/backend/Entities/Models/ProductImage.cs
+@@ -7,6 +7,7 @@ namespace Entities.Models
+         public Guid Id { get; set; }
+         public Guid ProductId { get; set; }
+         public string Url { get; set; } = string.Empty;
++        public string? AltText { get; set; }
+         public bool IsActive { get; set; }
+         public bool IsDeleted { get; set; }
+         public string? CreatedBy { get; set; }
+diff --git a/backend/FileManager.IntegrationTests/ProductImageApiTests.cs b/backend/FileManager.IntegrationTests/ProductImageApiTests.cs
+new file mode 100644
+index 0000000..f506d2f
+--- /dev/null
++++ b/backend/FileManager.IntegrationTests/ProductImageApiTests.cs
+@@ -0,0 +1,72 @@
++using System.Net;
++using System.Text.Json;
++using FileManager.IntegrationTests.Constants;
++using FileManager.IntegrationTests.Fixtures;
++using FileManager.IntegrationTests.Helpers;
++using FluentAssertions;
++
++namespace FileManager.IntegrationTests
++{
++    /// <summary>
++    /// Creating a product image over HTTP: the image comes back on the list endpoint, a soft-deleted
++    /// image does not, and the create writes its activity row.
++    /// </summary>
++    [Collection(IntegrationTestCollection.Name)]
++    public class ProductImageApiTests
++    {
++        private readonly HttpClient _client;
++        private readonly TestingWebApplicationFactory<Program> _factory;
++
++        public ProductImageApiTests(TestingWebApplicationFactory<Program> factory)
++        {
++            _factory = factory;
++            _client = factory.CreateClient();
++        }
++
++        [Fact]
++        public async Task CreatedImageIsListedAndAudited()
++        {
++            await DealApiFactory.AuthenticateClientAsync(_client);
++            var productId = TestConstants.DealDomain.ProductId;
++
++            var create = await _client.PostAsync(
++                $"/api/v2/products/{productId}/images",
++                DealApiFactory.JsonBody(new { url = "https://cdn.example.com/a.png", altText = "front" }));
++
++            create.StatusCode.Should().Be(HttpStatusCode.OK, "creating an image should succeed");
++
++            var created = await DealApiFactory.ReadRootAsync(create);
++            var imageId = created.GetProperty("data").GetProperty("id").GetGuid();
++
++            var list = await _client.GetAsync($"/api/v2/products/{productId}/images");
++            var listRoot = await DealApiFactory.ReadRootAsync(list);
++            listRoot.GetProperty("data").EnumerateArray()
++                .Select(i => i.GetProperty("id").GetGuid())
++                .Should().Contain(imageId, "a newly created image belongs in the list");
++
++            await AssertActivityWrittenAsync(imageId, "ProductImageCreated");
++
++            var delete = await _client.DeleteAsync($"/api/v2/products/{productId}/images/{imageId}");
++            delete.StatusCode.Should().Be(HttpStatusCode.OK);
++
++            var afterDelete = await _client.GetAsync($"/api/v2/products/{productId}/images");
++            var afterRoot = await DealApiFactory.ReadRootAsync(afterDelete);
++            afterRoot.GetProperty("data").EnumerateArray()
++                .Select(i => i.GetProperty("id").GetGuid())
++                .Should().NotContain(imageId, "a soft-deleted image must not come back from the list");
++        }
++
++        private async Task AssertActivityWrittenAsync(Guid entityId, string activityType)
++        {
++            using var scope = _factory.Services.CreateScope();
++            var context = scope.ServiceProvider.GetRequiredService<RepositoryContext>();
++
++            var activity = await context.SystemActivities
++                .Include(a => a.AdditionalInfos)
++                .FirstOrDefaultAsync(a => a.ActivityType == activityType);
++
++            activity.Should().NotBeNull("every mutation writes an activity row");
++            activity!.AdditionalInfos.Should().Contain(i => i.Key == "EntityId" && i.Value == entityId.ToString());
++        }
++    }
++}
+diff --git a/backend/FileManager.Presentation/Controllers/V2/ProductImageController.cs b/backend/FileManager.Presentation/Controllers/V2/ProductImageController.cs
+new file mode 100644
+index 0000000..95e4fd8
+--- /dev/null
++++ b/backend/FileManager.Presentation/Controllers/V2/ProductImageController.cs
+@@ -0,0 +1,40 @@
++using FileManager.Presentation.ActionFilters;
++using Microsoft.AspNetCore.Mvc;
++using Service.Contracts;
++using Shared;
++using Shared.DataTransferObjects;
++
++namespace FileManager.Presentation.Controllers.V2
++{
++    [Route("api/v2/products/{productId:guid}/images")]
++    [ApiController]
++    [ModuleRoleAuthorize(modules: new[] { Modules.Catalog }, roles: new[] { Roles.Admin, Roles.CatalogManager })]
++    public class ProductImageController : ControllerBase
++    {
++        private readonly IServiceManager _service;
++
++        public ProductImageController(IServiceManager service) => _service = service;
++
++        [HttpGet]
++        public async Task<IActionResult> GetProductImages(Guid productId)
++        {
++            var result = await _service.ProductImageService.GetProductImagesAsync(productId);
++            return result.ToActionResult(ResponseMessages.productImagesFetched);
++        }
++
++        [HttpPost]
++        [ServiceFilter(typeof(ValidationFilterAttribute))]
++        public async Task<IActionResult> CreateProductImage(Guid productId, [FromBody] ProductImageCreateDto createDto)
++        {
++            var result = await _service.ProductImageService.CreateProductImageAsync(productId, createDto);
++            return result.ToActionResult(ResponseMessages.productImageInserted);
++        }
++
++        [HttpDelete("{imageId:guid}")]
++        public async Task<IActionResult> DeleteProductImage(Guid productId, Guid imageId)
++        {
++            var result = await _service.ProductImageService.DeleteProductImageAsync(productId, imageId);
++            return result.ToActionResult(ResponseMessages.productImageDeleted);
++        }
++    }
++}
+diff --git a/backend/FileManager/MainProfile.cs b/backend/FileManager/MainProfile.cs
+index d8356aa..264fc17 100644
+--- a/backend/FileManager/MainProfile.cs
++++ b/backend/FileManager/MainProfile.cs
+@@ -9,6 +9,8 @@ namespace FileManager
+         public MainProfile()
+         {
+             CreateMap<Product, ProductDto>();
++            CreateMap<ProductImage, ProductImageDto>();
++            CreateMap<ProductImageCreateDto, ProductImage>();
+             CreateMap<Scenario, DsmScenarioDetailDto>();
+         }
+     }
+diff --git a/backend/FileManager/Migrations/20260918101500_AddProductImageAltText.cs b/backend/FileManager/Migrations/20260918101500_AddProductImageAltText.cs
+new file mode 100644
+index 0000000..712f40e
+--- /dev/null
++++ b/backend/FileManager/Migrations/20260918101500_AddProductImageAltText.cs
+@@ -0,0 +1,29 @@
++using Microsoft.EntityFrameworkCore.Migrations;
++
++#nullable disable
++
++namespace FileManager.Migrations
++{
++    /// <inheritdoc />
++    public partial class AddProductImageAltText : Migration
++    {
++        /// <inheritdoc />
++        protected override void Up(MigrationBuilder migrationBuilder)
++        {
++            migrationBuilder.AddColumn<string>(
++                name: "AltText",
++                table: "ProductImages",
++                type: "nvarchar(200)",
++                maxLength: 200,
++                nullable: true);
++        }
++
++        /// <inheritdoc />
++        protected override void Down(MigrationBuilder migrationBuilder)
++        {
++            migrationBuilder.DropColumn(
++                name: "AltText",
++                table: "ProductImages");
++        }
++    }
++}
+diff --git a/backend/Repository/Configuration/ProductImageConfiguration.cs b/backend/Repository/Configuration/ProductImageConfiguration.cs
+new file mode 100644
+index 0000000..3df178a
+--- /dev/null
++++ b/backend/Repository/Configuration/ProductImageConfiguration.cs
+@@ -0,0 +1,25 @@
++using Entities.Models;
++using Microsoft.EntityFrameworkCore;
++using Microsoft.EntityFrameworkCore.Metadata.Builders;
++
++namespace Repository.Configuration;
++
++public class ProductImageConfiguration : IEntityTypeConfiguration<ProductImage>
++{
++    public void Configure(EntityTypeBuilder<ProductImage> builder)
++    {
++        builder.HasKey(p => p.Id);
++
++        builder.Property(p => p.Url).IsRequired().HasMaxLength(2048);
++        builder.Property(p => p.AltText).HasMaxLength(200);
++        builder.Property(p => p.IsActive).HasDefaultValue(true);
++
++        builder.HasOne<Product>()
++            .WithMany()
++            .HasForeignKey(p => p.ProductId)
++            .OnDelete(DeleteBehavior.Cascade);
++
++        builder.HasIndex(p => new { p.ProductId, p.Url })
++            .HasDatabaseName("IX_ProductImage_ProductId_Url");
++    }
++}
+diff --git a/backend/Repository/ProductImageRepository.cs b/backend/Repository/ProductImageRepository.cs
+new file mode 100644
+index 0000000..41bfad5
+--- /dev/null
++++ b/backend/Repository/ProductImageRepository.cs
+@@ -0,0 +1,34 @@
++using Contracts;
++using Entities.Models;
++using Microsoft.EntityFrameworkCore;
++
++namespace Repository
++{
++    public class ProductImageRepository : RepositoryBase<ProductImage>, IProductImageRepository
++    {
++        public ProductImageRepository(RepositoryContext repositoryContext) : base(repositoryContext)
++        {
++        }
++
++        public async Task<ProductImage?> GetProductImageByIdAsync(Guid id, bool trackChanges) =>
++            await FindByCondition(p => p.Id == id && p.IsDeleted == false, trackChanges)
++                .FirstOrDefaultAsync();
++
++        public async Task<List<ProductImage>> GetProductImagesAsync(Guid productId, bool trackChanges) =>
++            await FindByCondition(p => p.ProductId == productId && p.IsActive && p.IsDeleted == false, trackChanges)
++                .OrderBy(p => p.CreatedAt)
++                .ToListAsync();
++
++        public async Task<List<ProductImage>> GetAllIncludingInactiveAsync(Guid productId, bool trackChanges) =>
++            await FindByCondition(p => p.ProductId == productId && p.IsDeleted == false, trackChanges)
++                .ToListAsync();
++
++        public async Task<bool> UrlExistsAsync(Guid productId, string url) =>
++            await FindByCondition(p => p.ProductId == productId && p.Url == url && p.IsDeleted == false, trackChanges: false)
++                .AnyAsync();
++
++        public void CreateProductImage(ProductImage productImage) => Create(productImage);
++
++        public void DeleteProductImage(ProductImage productImage) => Delete(productImage);
++    }
++}
+diff --git a/backend/Repository/RepositoryContext.cs b/backend/Repository/RepositoryContext.cs
+index d508ae3..89c9aad 100644
+--- a/backend/Repository/RepositoryContext.cs
++++ b/backend/Repository/RepositoryContext.cs
+@@ -8,6 +8,7 @@ namespace Repository
+         protected override void OnModelCreating(ModelBuilder modelBuilder)
+         {
+             modelBuilder.ApplyConfiguration(new ProductConfiguration());
++            modelBuilder.ApplyConfiguration(new ProductImageConfiguration());
+             modelBuilder.ApplyConfiguration(new ScenarioStepConfiguration());
+         }
+     }
+diff --git a/backend/Repository/RepositoryManager.cs b/backend/Repository/RepositoryManager.cs
+index 8de54b6..71d3f0d 100644
+--- a/backend/Repository/RepositoryManager.cs
++++ b/backend/Repository/RepositoryManager.cs
+@@ -5,16 +5,19 @@ namespace Repository
+     public sealed class RepositoryManager : IRepositoryManager
+     {
+         private readonly RepositoryContext _repositoryContext;
++        private readonly Lazy<IProductImageRepository> _productImageRepository;
+         private readonly Lazy<IProductRepository> _productRepository;
+         private readonly Lazy<IScenarioRepository> _scenarioRepository;
+ 
+         public RepositoryManager(RepositoryContext repositoryContext)
+         {
+             _repositoryContext = repositoryContext;
++            _productImageRepository = new Lazy<IProductImageRepository>(() => new ProductImageRepository(repositoryContext));
+             _productRepository = new Lazy<IProductRepository>(() => new ProductRepository(repositoryContext));
+             _scenarioRepository = new Lazy<IScenarioRepository>(() => new ScenarioRepository(repositoryContext));
+         }
+ 
++        public IProductImageRepository ProductImages => _productImageRepository.Value;
+         public IProductRepository Products => _productRepository.Value;
+         public IScenarioRepository Scenarios => _scenarioRepository.Value;
+ 
+diff --git a/backend/Service.Contracts/IServiceManager.cs b/backend/Service.Contracts/IServiceManager.cs
+index e4aee4f..2ba2e58 100644
+--- a/backend/Service.Contracts/IServiceManager.cs
++++ b/backend/Service.Contracts/IServiceManager.cs
+@@ -2,6 +2,7 @@ namespace Service.Contracts
+ {
+     public interface IServiceManager
+     {
++        IProductImageService ProductImageService { get; }
+         IProductService ProductService { get; }
+         IScenarioService ScenarioService { get; }
+     }
+diff --git a/backend/Service/ActivityTypes.cs b/backend/Service/ActivityTypes.cs
+index 3c9ee5e..95cfbb0 100644
+--- a/backend/Service/ActivityTypes.cs
++++ b/backend/Service/ActivityTypes.cs
+@@ -3,6 +3,8 @@ namespace Service
+     public static class ActivityTypes
+     {
+         public const string DsmScenarioCreated = "DsmScenarioCreated";
++        public const string ProductImageCreated = "ProductImageCreated";
++        public const string ProductImageDeleted = "ProductImageDeleted";
+         public const string ProductUpdated = "ProductUpdated";
+     }
+ }
+diff --git a/backend/Service/ProductImageService.cs b/backend/Service/ProductImageService.cs
+new file mode 100644
+index 0000000..5d51378
+--- /dev/null
++++ b/backend/Service/ProductImageService.cs
+@@ -0,0 +1,87 @@
++using Ardalis.Result;
++using AutoMapper;
++using Contracts;
++using Entities.Models;
++using Microsoft.Extensions.Configuration;
++using Service.Contracts;
++using Service.Extensions;
++using Shared;
++using Shared.DataTransferObjects;
++
++namespace Service
++{
++    public class ProductImageService : IProductImageService
++    {
++        private readonly IRepositoryManager _repository;
++        private readonly IMapper _mapper;
++        private readonly ILoggedInUserService _loggedInUserService;
++        private readonly ISystemActivityService _systemActivityService;
++        private readonly string _cdnBaseUrl;
++
++        public ProductImageService(
++            IRepositoryManager repository,
++            IMapper mapper,
++            ILoggedInUserService loggedInUserService,
++            ISystemActivityService systemActivityService,
++            IConfiguration configuration)
++        {
++            _repository = repository;
++            _mapper = mapper;
++            _loggedInUserService = loggedInUserService;
++            _systemActivityService = systemActivityService;
++            _cdnBaseUrl = configuration["ProductImages:CdnBaseUrl"] ?? string.Empty;
++        }
++
++        public async Task<Result<List<ProductImageDto>>> GetProductImagesAsync(Guid productId)
++        {
++            var images = await _repository.ProductImages.GetProductImagesAsync(productId, trackChanges: false);
++            return _mapper.Map<List<ProductImageDto>>(images);
++        }
++
++        public async Task<Result<ProductImageDto>> CreateProductImageAsync(Guid productId, ProductImageCreateDto createDto)
++        {
++            var product = await _repository.Products.GetProductByIdAsync(productId, trackChanges: false);
++            if (product is null)
++                return Result.NotFound();
++
++            if (await _repository.ProductImages.UrlExistsAsync(productId, createDto.Url))
++                return Result.Invalid(new ValidationError(ResponseMessages.productImageDuplicateUrl));
++
++            var image = _mapper.Map<ProductImage>(createDto);
++            image.ProductId = productId;
++            image.IsActive = true;
++            image.CreatedBy = _loggedInUserService.UserId;
++
++            _repository.ProductImages.CreateProductImage(image);
++            await _repository.SaveAsync();
++
++            await _systemActivityService.LogEntityAsync(
++                ActivityTypes.ProductImageCreated,
++                image.Id,
++                ("ProductId", productId.ToString()),
++                ("Url", image.Url));
++
++            var created = await _repository.ProductImages.GetProductImageByIdAsync(image.Id, trackChanges: false);
++            return _mapper.Map<ProductImageDto>(created);
++        }
++
++        public async Task<Result> DeleteProductImageAsync(Guid productId, Guid imageId)
++        {
++            var image = await _repository.ProductImages.GetProductImageByIdAsync(imageId, trackChanges: true);
++            if (image is null || image.ProductId != productId)
++                return Result.NotFound();
++
++            image.IsDeleted = true;
++            image.UpdatedBy = _loggedInUserService.UserId;
++            await _repository.SaveAsync();
++
++            await _systemActivityService.LogEntityAsync(
++                ActivityTypes.ProductImageDeleted,
++                image.Id,
++                ("ProductId", productId.ToString()),
++                ("OldUrl", image.Url));
++
++            return Result.Success();
++        }
++    }
++}
+diff --git a/backend/Service/ServiceManager.cs b/backend/Service/ServiceManager.cs
+index b1ffb5e..419e950 100644
+--- a/backend/Service/ServiceManager.cs
++++ b/backend/Service/ServiceManager.cs
+@@ -1,4 +1,5 @@
+ using AutoMapper;
++using Microsoft.Extensions.Configuration;
+ using Contracts;
+ using Service.Contracts;
+ 
+@@ -6,17 +7,20 @@ namespace Service
+ {
+     public sealed class ServiceManager : IServiceManager
+     {
++        private readonly Lazy<IProductImageService> _productImageService;
+         private readonly Lazy<IProductService> _productService;
+         private readonly Lazy<IScenarioService> _scenarioService;
+         private readonly Lazy<ISystemActivityService> _systemActivityService;
+ 
+-        public ServiceManager(IRepositoryManager repository, IMapper mapper, ILoggedInUserService loggedInUserService)
++        public ServiceManager(IRepositoryManager repository, IMapper mapper, ILoggedInUserService loggedInUserService, IConfiguration configuration)
+         {
+             _systemActivityService = new Lazy<ISystemActivityService>(() => new SystemActivityService(repository, loggedInUserService));
++            _productImageService = new Lazy<IProductImageService>(() => new ProductImageService(repository, mapper, loggedInUserService, _systemActivityService.Value, configuration));
+             _productService = new Lazy<IProductService>(() => new ProductService(repository, mapper, _systemActivityService.Value));
+             _scenarioService = new Lazy<IScenarioService>(() => new ScenarioService(repository, mapper, _systemActivityService.Value));
+         }
+ 
++        public IProductImageService ProductImageService => _productImageService.Value;
+         public IProductService ProductService => _productService.Value;
+         public IScenarioService ScenarioService => _scenarioService.Value;
+     }
+diff --git a/backend/Shared/DataTransferObjects/ProductImageDtos.cs b/backend/Shared/DataTransferObjects/ProductImageDtos.cs
+new file mode 100644
+index 0000000..afd3e48
+--- /dev/null
++++ b/backend/Shared/DataTransferObjects/ProductImageDtos.cs
+@@ -0,0 +1,33 @@
++using System.ComponentModel.DataAnnotations;
++
++namespace Shared.DataTransferObjects
++{
++    public class ProductImageDto
++    {
++        public Guid Id { get; set; }
++        public Guid ProductId { get; set; }
++        public string Url { get; set; } = string.Empty;
++        public string? AltText { get; set; }
++        public bool IsActive { get; set; }
++    }
++
++    public class ProductImageCreateDto
++    {
++        [Required(ErrorMessage = "Url is required")]
++        [MaxLength(2048, ErrorMessage = "Url cannot exceed 2048 characters")]
++        public string Url { get; set; } = string.Empty;
++
++        [MaxLength(200, ErrorMessage = "Alt text cannot exceed 200 characters")]
++        public string? AltText { get; set; }
++    }
++
++    public class ProductImageUpdateDto
++    {
++        [Required(ErrorMessage = "Url is required")]
++        [MaxLength(2048, ErrorMessage = "Url cannot exceed 2048 characters")]
++        public string Url { get; set; } = string.Empty;
++
++        [MaxLength(200, ErrorMessage = "Alt text cannot exceed 200 characters")]
++        public string? AltText { get; set; }
++    }
++}

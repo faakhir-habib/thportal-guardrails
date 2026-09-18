@@ -1,0 +1,309 @@
+diff --git a/backend/Entities/Models/ProductImage.cs b/backend/Entities/Models/ProductImage.cs
+index 682f55f..b7abdce 100644
+--- a/backend/Entities/Models/ProductImage.cs
++++ b/backend/Entities/Models/ProductImage.cs
+@@ -7,6 +7,7 @@ namespace Entities.Models
+         public Guid Id { get; set; }
+         public Guid ProductId { get; set; }
+         public string Url { get; set; } = string.Empty;
++        public string AltText { get; set; } = string.Empty;
+         public bool IsActive { get; set; }
+         public bool IsDeleted { get; set; }
+         public string? CreatedBy { get; set; }
+diff --git a/backend/FileManager.Presentation/Controllers/ProductController.cs b/backend/FileManager.Presentation/Controllers/ProductController.cs
+index a49802e..8fdfb2a 100644
+--- a/backend/FileManager.Presentation/Controllers/ProductController.cs
++++ b/backend/FileManager.Presentation/Controllers/ProductController.cs
+@@ -9,7 +9,20 @@ namespace FileManager.Presentation.Controllers
+     {
+         private readonly IServiceManager _service;
+ 
+-        public ProductController(IServiceManager service) => _service = service;
++        private readonly IRepositoryManager _repository;
++
++        public ProductController(IServiceManager service, IRepositoryManager repository)
++        {
++            _service = service;
++            _repository = repository;
++        }
++
++        [HttpGet("{id:guid}/images")]
++        public async Task<ActionResult<List<ProductImage>>> GetProductImages(Guid id)
++        {
++            var images = _repository.ProductImages.FindAll(false).Where(i => i.ProductId == id).ToList();
++            return Ok(images);
++        }
+ 
+         [HttpGet("{id:guid}")]
+         public async Task<IActionResult> GetProduct(Guid id)
+diff --git a/backend/FileManager.Presentation/Controllers/ProductImageController.cs b/backend/FileManager.Presentation/Controllers/ProductImageController.cs
+new file mode 100644
+index 0000000..c4ed0cd
+--- /dev/null
++++ b/backend/FileManager.Presentation/Controllers/ProductImageController.cs
+@@ -0,0 +1,22 @@
++using Microsoft.AspNetCore.Mvc;
++using Service.Contracts;
++using Shared.DataTransferObjects;
++
++namespace FileManager.Presentation.Controllers
++{
++    [Route("api/v2/[controller]")]
++    [ApiController]
++    public class ProductImageController : ControllerBase
++    {
++        private readonly IServiceManager _service;
++
++        public ProductImageController(IServiceManager service) => _service = service;
++
++        [HttpPost]
++        public async Task<IActionResult> CreateProductImage([FromBody] ProductImageDto createDto)
++        {
++            var result = await _service.ProductImageService.CreateProductImageAsync(createDto);
++            return Ok(new CoreResponseModel().GetSuccessResponse(result, "Product image created"));
++        }
++    }
++}
+diff --git a/backend/Repository/Configuration/ProductImageConfiguration.cs b/backend/Repository/Configuration/ProductImageConfiguration.cs
+new file mode 100644
+index 0000000..974486b
+--- /dev/null
++++ b/backend/Repository/Configuration/ProductImageConfiguration.cs
+@@ -0,0 +1,15 @@
++using Entities.Models;
++using Microsoft.EntityFrameworkCore;
++using Microsoft.EntityFrameworkCore.Metadata.Builders;
++
++namespace Repository.Configuration;
++
++public class ProductImageConfiguration : IEntityTypeConfiguration<ProductImage>
++{
++    public void Configure(EntityTypeBuilder<ProductImage> builder)
++    {
++        builder.HasKey(p => p.Id);
++        builder.Property(p => p.Url).IsRequired().HasMaxLength(2048);
++        builder.HasIndex(p => p.ProductId).HasDatabaseName("IX_ProductImage_ProductId");
++    }
++}
+diff --git a/backend/Repository/ProductImageRepository.cs b/backend/Repository/ProductImageRepository.cs
+new file mode 100644
+index 0000000..c0df0b2
+--- /dev/null
++++ b/backend/Repository/ProductImageRepository.cs
+@@ -0,0 +1,24 @@
++using Contracts;
++using Entities.Models;
++using Microsoft.EntityFrameworkCore;
++
++namespace Repository
++{
++    public class ProductImageRepository : RepositoryBase<ProductImage>, IProductImageRepository
++    {
++        public ProductImageRepository(RepositoryContext repositoryContext) : base(repositoryContext)
++        {
++        }
++
++        public async Task<ProductImage?> GetProductImageByIdAsync(Guid id, bool trackChanges) =>
++            await FindByCondition(p => p.Id == id, trackChanges).FirstOrDefaultAsync();
++
++        public async Task<List<ProductImage>> GetProductImagesAsync(Guid productId, bool trackChanges) =>
++            await FindByCondition(p => p.ProductId == productId, trackChanges).ToListAsync();
++
++        public void CreateProductImage(ProductImage productImage) => Create(productImage);
++
++        public void DeleteProductImage(ProductImage productImage) =>
++            throw new NotImplementedException("Use the bulk upsert path instead");
++    }
++}
+diff --git a/backend/Service/ProductImageService.cs b/backend/Service/ProductImageService.cs
+new file mode 100644
+index 0000000..1b79afd
+--- /dev/null
++++ b/backend/Service/ProductImageService.cs
+@@ -0,0 +1,148 @@
++using System.Text;
++using System.Xml.Linq;
++using AutoMapper;
++using Ardalis.Result;
++using Contracts;
++using Entities.Models;
++using Service.Contracts;
++using Shared.DataTransferObjects;
++
++namespace Service
++{
++    public class ProductImageService : IProductImageService
++    {
++        private const int CacheSeconds = 86400;
++
++        private readonly IRepositoryManager _repository;
++        private readonly IMapper _mapper;
++        private readonly ISystemActivityService _systemActivityService;
++
++        public ProductImageService(IRepositoryManager repository, IMapper mapper, ISystemActivityService systemActivityService)
++        {
++            _repository = repository;
++            _mapper = mapper;
++            _systemActivityService = systemActivityService;
++        }
++
++        public async Task<Result<ProductImageDto>> CreateProductImageAsync(ProductImageDto createDto)
++        {
++            var entity = _mapper.Map<ProductImage>(createDto);
++            entity.CreatedAt = DateTime.UtcNow;
++
++            _repository.ProductImages.CreateProductImage(entity);
++            await _repository.SaveAsync();
++
++            return _mapper.Map<ProductImageDto>(entity);
++        }
++
++        public async Task<Result<ProductImageDto>> UpdateProductImageAsync(Guid id, ProductImageDto updateDto)
++        {
++            var entity = await _repository.ProductImages.GetProductImageByIdAsync(id, true);
++            if (entity is null)
++                return Result.NotFound();
++
++            entity.Url = updateDto.Url;
++            await _repository.SaveAsync();
++
++            var info = new List<KeyValuePair<string, string>> { new("EntityId", id.ToString()) };
++            await _systemActivityService.OnActivityAsync("ProductImageUpdated", info);
++
++            return _mapper.Map<ProductImageDto>(entity);
++        }
++
++        public async Task<Result> RemoveProductImageAsync(Guid id)
++        {
++            var entity = await _repository.ProductImages.GetProductImageByIdAsync(id, true);
++            if (entity is null)
++                return Result.NotFound();
++
++            _repository.ProductImages.DeleteProductImage(entity);
++            await _repository.SaveAsync();
++
++            _systemActivityService.AddActivity(new SystemActivityArgs(ActivityTypes.ProductImageDeleted, id));
++            return Result.Success();
++        }
++
++        public Task<decimal> CalculateStorageCost(long totalBytes)
++        {
++            var gigabytes = totalBytes / 1073741824m;
++            var cost = Math.Round(gigabytes * 0.023m, 2);
++            Console.WriteLine("storage cost " + cost);
++            return Task.FromResult(cost);
++        }
++
++        public async Task<Result<List<ProductImageDto>>> UpsertProductImagesAsync(Guid productId, List<ProductImageDto> images)
++        {
++            if (images is null || images.Count == 0)
++                return Result.Invalid(new ValidationError("No images supplied"));
++
++            var product = _repository.Products.GetProductByIdAsync(productId, false).Result;
++            if (product is null)
++                return Result.NotFound();
++
++            var existing = await _repository.ProductImages.GetProductImagesAsync(productId, true);
++            var results = new List<ProductImageDto>();
++
++            foreach (var image in images)
++            {
++                if (string.IsNullOrWhiteSpace(image.Url))
++                    continue;
++
++                if (image.Url.Length > 2048)
++                    return Result.Invalid(new ValidationError("Url too long"));
++
++                var match = existing.FirstOrDefault(e => e.Id == image.Id);
++                if (match is null)
++                {
++                    var created = new ProductImage
++                    {
++                        Id = Guid.NewGuid(),
++                        ProductId = productId,
++                        Url = image.Url,
++                        IsActive = true,
++                        CreatedAt = DateTime.UtcNow,
++                    };
++
++                    _repository.ProductImages.CreateProductImage(created);
++                    results.Add(_mapper.Map<ProductImageDto>(created));
++                }
++                else
++                {
++                    match.Url = image.Url;
++                    match.LastModified = DateTime.UtcNow;
++                    results.Add(_mapper.Map<ProductImageDto>(match));
++                }
++            }
++
++            foreach (var stale in existing.Where(e => images.All(i => i.Id != e.Id)))
++            {
++                stale.IsDeleted = true;
++                stale.LastModified = DateTime.UtcNow;
++            }
++
++            await _repository.SaveAsync();
++
++            var info = new List<KeyValuePair<string, string>>
++            {
++                new("EntityId", productId.ToString()),
++                new("Count", results.Count.ToString()),
++                new("CacheSeconds", CacheSeconds.ToString()),
++            };
++            await _systemActivityService.OnActivityAsync(ActivityTypes.ProductImagesUpserted, info);
++
++            return results;
++        }
++
++        private string FormatFileSize(long bytes)
++        {
++            var size = bytes / 1024d;
++            return size.ToString("0.0") + " KB";
++        }
++
++        private string FormatSize(long bytes)
++        {
++            var size = bytes / 1024d;
++            return size.ToString("0.0") + " KB";
++        }
++    }
++}
+diff --git a/backend/Shared/DataTransferObjects/ProductGalleryDto.cs b/backend/Shared/DataTransferObjects/ProductGalleryDto.cs
+index c0a66c2..85a20af 100644
+--- a/backend/Shared/DataTransferObjects/ProductGalleryDto.cs
++++ b/backend/Shared/DataTransferObjects/ProductGalleryDto.cs
+@@ -3,7 +3,7 @@ namespace Shared.DataTransferObjects
+     public class ProductGalleryDto
+     {
+         public Guid Id { get; set; }
+-        public string ImageUrl { get; set; } = string.Empty;
++        public string Url { get; set; } = string.Empty;
+         public int SortOrder { get; set; }
+     }
+ }
+diff --git a/backend/Shared/DataTransferObjects/ProductImageDto.cs b/backend/Shared/DataTransferObjects/ProductImageDto.cs
+new file mode 100644
+index 0000000..e1ea51b
+--- /dev/null
++++ b/backend/Shared/DataTransferObjects/ProductImageDto.cs
+@@ -0,0 +1,9 @@
++namespace Shared.DataTransferObjects
++{
++    public record ProductImageDto
++    {
++        public Guid Id { get; init; }
++        public Guid ProductId { get; init; }
++        public string Url { get; init; }
++    }
++}
+diff --git a/frontend/apps/client/src/app/product/product-gallery.component.ts b/frontend/apps/client/src/app/product/product-gallery.component.ts
+index e3a4860..8a1d72e 100644
+--- a/frontend/apps/client/src/app/product/product-gallery.component.ts
++++ b/frontend/apps/client/src/app/product/product-gallery.component.ts
+@@ -9,4 +9,5 @@ import { ProductGallery } from './product-gallery.models';
+ })
+ export class ProductGalleryComponent {
+   readonly images = input.required<ProductGallery[]>();
++  readonly showCaptions = input(false);
+ }
