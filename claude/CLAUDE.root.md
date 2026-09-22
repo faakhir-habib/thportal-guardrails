@@ -38,13 +38,16 @@ Three principles sit above the specific rules:
 
 `/ticket` → plan approved → code → `/validate` → commit → `/ship`
 
-`/validate` and `/thportal-review` exist today. **A commit that touches `backend/` is refused unless
-`/validate` has passed on exactly that staged content** — format, build, the integration suite and an
-architecture review. It takes about five and a half minutes. Frontend-only and merge commits are
+**A commit that touches `backend/` is refused unless `/validate` has passed on exactly that staged
+content** — format, build, the integration suite, an architecture review, and the ticket's QA cases
+run over real HTTP. It takes about five and a half minutes. Frontend-only and merge commits are
 untouched.
 
-`/ticket`, `/ship` and `/learn` are still being built, so until they land, do the ticket, QA and
-Asana steps by hand.
+**Every branch needs its ticket link.** `/ticket` sets it; without it a backend commit is refused.
+
+`/ship` opens the PR and prepares the ticket comment, then **waits** — nothing reaches Asana until you
+have read the QA cases and said to post. `/learn` turns a review comment, a QA failure or a correction
+into a rule so it is never explained twice.
 
 Never commit or push unless the developer asks. Leave finished work in the working tree and report
 what changed per file.

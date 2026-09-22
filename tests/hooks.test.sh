@@ -24,6 +24,7 @@ git config user.name t
 mkdir -p .claude backend frontend .git/guardrails/stamps
 cp -r "$BUNDLE" .claude/guardrails
 git config core.hooksPath .claude/guardrails/githooks
+git config branch.main.asanaTask 1218492088693885
 RULES_HASH="$(cd .claude/guardrails && node -e "import('./scripts/lib/stamp.mjs').then(m=>console.log(m.rulesHash()))")"
 
 echo "gate"
@@ -67,7 +68,6 @@ git commit -q -m "feat(be): add C
 C is needed because B could not carry the flag."; check "a good message is accepted" "$?" "0"
 
 echo "the Asana trailer"
-git config branch.main.asanaTask 1218492088693885
 echo "class D {}" > backend/D.cs
 git add backend/D.cs
 stamp "$(git write-tree)"
@@ -75,6 +75,22 @@ git commit -q -m "feat(be): add D
 
 D exists so the trailer has something to attach to."
 git log -1 --format=%B | grep -q "Asana: .*1218492088693885"; check "the trailer was appended from the branch link" "$?" "0"
+
+echo "an unlinked branch"
+git config --unset branch.main.asanaTask
+echo "class E {}" > backend/E.cs
+git add backend/E.cs
+stamp "$(git write-tree)"
+git commit -q -m "feat(be): add E
+
+E is here to prove an unlinked branch is refused."
+UNLINKED=$?
+git config branch.main.asanaTask 1218492088693885
+if grep -q '"requireTicket": true' .claude/guardrails/config.json; then
+  check "a backend commit on an unlinked branch is blocked" "$UNLINKED" "1"
+else
+  check "an unlinked branch is allowed while requireTicket is off" "$UNLINKED" "0"
+fi
 set -e
 
 echo

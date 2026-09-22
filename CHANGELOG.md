@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.5.0 — 2026-09-22
+
+- **`/ship`** — refuses unless the work is committed, validated and its API cases passed; reviews the
+  whole branch against `origin/staging` rather than the last commit; pushes; opens the PR with a short
+  built body; waits up to ten minutes for the preview API and re-runs the QA cases there; then prints
+  the exact Asana comment and **stops**. `--post` is a separate step that posts the comment, sets
+  **Branch name**, **Preview Url** and **Backend Status → Done**, and moves the task to **QA**.
+- **`/learn`** — turns a review comment, a QA failure, a waiver or a correction into a rule: one
+  sentence, an existing rule updated in preference to a new one, verified against the codebase with a
+  counted majority, a severity and a real path, an eval case that proves it, a changelog row, and a
+  `chore(rules)` commit in this repo.
+- **`gate.requireTicket` is now on.** A backend commit on a branch with no ticket link is refused, and
+  the refusal names the command that fixes it. `/ticket` links the branch automatically.
+- The PR body builder throws rather than let a mention of Claude through, and the ticket comment is
+  built from the small tag set Asana actually accepts.
+
 ## 0.4.0 — 2026-09-18
 
 - **`/ticket`** — reads an Asana task and its comments, creates and links the branch, explores the

@@ -60,14 +60,15 @@ block, and leaves your stamps and the bundle clone alone.
 | Commit message rules | Conventional header, a body saying why, the `Asana:` trailer from the branch's ticket link, and no Claude attribution |
 | `/ticket <asana>` | Reads the task, links the branch, and writes the QA cases and the plan for you to approve |
 | QA cases | Run over real HTTP against a throwaway SQL container during `/validate`; a failed case blocks the commit |
+| `/ship` | Reviews the whole branch, pushes, opens the PR, re-runs the QA cases on the preview, then shows you the ticket comment and waits |
+| `/learn` | Turns a review comment, a QA failure or a correction into a rule with an eval case |
 
 **How long validation takes** — measured on this repo: format 19s (staged files only), build 99s,
 integration suite 221s. About **five and a half minutes** in total. Stamping straight afterwards
 reuses that result, so it costs nothing twice.
 
-**Still to come** — `/ship` and `/learn`: opening the PR, verifying on the preview environment, and
-posting to Asana once the developer has approved the text. Until they land, do the PR and Asana steps
-by hand.
+**Every branch needs a ticket.** A backend commit on a branch with no `branch.<name>.asanaTask` link is
+refused; `/ticket` sets it, or set it by hand once with `git config branch.$(git branch --show-current).asanaTask <gid>`.
 
 ## Requirements
 
@@ -79,7 +80,7 @@ by hand.
 
 ```
 rules/          the single source of backend rules
-skills/         /thportal-review, /validate and /ticket
+skills/         /thportal-review, /validate, /ticket, /ship and /learn
 agents/         the read-only architecture reviewer
 githooks/       pre-commit, prepare-commit-msg, commit-msg
 scripts/        the gate, the checks, the stamp, the QA runner, the Claude Code hooks, install and uninstall
@@ -89,8 +90,8 @@ tests/          node --test units, plus hooks.test.sh which drives real commits
 docs/           design.md and the implementation plans
 ```
 
-Run the tests with `node --test "tests/*.test.mjs"` (51 of them) and `sh tests/hooks.test.sh`, which
-drives real commits through the real hooks in a throwaway repo (9 cases). Quote the glob — a bare
+Run the tests with `node --test "tests/*.test.mjs"` (72 of them) and `sh tests/hooks.test.sh`, which
+drives real commits through the real hooks in a throwaway repo (10 cases). Quote the glob — a bare
 `tests/` is read as a module path, not a directory.
 
-Status: rules, reviewer, /validate, the commit gate, /ticket and the QA runner are in place and proven on the real repository. Version 0.4.0 — see CHANGELOG.md.
+Status: the whole loop works — /ticket, /validate, the commit gate, /ship and /learn. Version 0.5.0 — see CHANGELOG.md.
