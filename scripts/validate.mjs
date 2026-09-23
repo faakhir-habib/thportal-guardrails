@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { join } from 'node:path';
 import { currentBranch, repoRoot, stagedFiles, ticketForBranch, touchesBackend, writeTree } from './lib/repo.mjs';
-import { runBackendChecks } from './lib/checks.mjs';
+import { buildBackend, dockerRunning, formatAndRestage, testBackend } from './lib/checks.mjs';
 import { rulesHash, writeStamp } from './lib/stamp.mjs';
 
 const unstagedInStaged = () => {
@@ -46,16 +46,58 @@ if (dirty.length) {
 
 const cached = reviewPath ? cachedChecks(writeTree()) : null;
 
-const { result, checks } = cached ?? runBackendChecks({
-  files,
-  onProgress: (c) => process.stderr.write(`${c.name}: ${c.status} (${(c.durationMs / 1000).toFixed(0)}s)\n`),
-});
+let result;
+let checks;
+let tree;
 
-if (cached) process.stderr.write('checks: reusing the result cached for this exact staged content\n');
+if (cached) {
+  ({ result, checks } = cached);
+  tree = writeTree();
+  process.stderr.write('checks: reusing the result cached for this exact staged content\n');
+} else {
+  const progress = (c) => process.stderr.write(`${c.name}: ${c.status} (${(c.durationMs / 1000).toFixed(0)}s)\n`);
 
-// After the checks, because formatting rewrites and re-stages files.
-const tree = writeTree();
-if (!cached) cacheChecks(tree, { result, checks });
+  // Formatting rewrites and re-stages, so the tree is only meaningful after it.
+  const format = formatAndRestage(files);
+  progress(format);
+  checks = { format: { status: format.status, durationMs: format.durationMs, output: format.status === 'fail' ? format.output : '', ...(format.reformatted?.length ? { reformatted: format.reformatted } : {}) } };
+  tree = writeTree();
+
+  if (format.status !== 'pass') {
+    result = 'fail';
+  } else if (!dockerRunning()) {
+    checks.docker = { status: 'fail', durationMs: 0, output: 'Docker is not running; the integration suite cannot start its SQL Server container.' };
+    result = 'fail';
+  } else {
+    const build = buildBackend();
+    progress(build);
+    checks.build = { status: build.status, durationMs: build.durationMs, output: build.status === 'fail' ? build.output : '' };
+
+    if (build.status !== 'pass') {
+      result = 'fail';
+    } else {
+      const tests = testBackend();
+      progress(tests);
+      checks.integrationTests = { status: tests.status, durationMs: tests.durationMs, output: tests.status === 'fail' ? tests.output : '' };
+      result = tests.status === 'pass' ? 'pass' : 'fail';
+    }
+  }
+
+  // The checks read the working tree, so anything staged while they ran was never actually checked.
+  // Stamping that content would be a lie, and a quiet one.
+  const treeAfter = writeTree();
+  if (treeAfter !== tree) {
+    console.log(JSON.stringify({
+      result: 'fail',
+      reason: 'the staged content changed while validation was running, so what was checked is not what would be stamped',
+      checkedTree: tree,
+      currentTree: treeAfter,
+    }, null, 2));
+    process.exit(1);
+  }
+
+  cacheChecks(tree, { result, checks });
+}
 
 if (!reviewPath) {
   console.log(JSON.stringify({ tree, result, checks }, null, 2));
