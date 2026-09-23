@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.5.1 — 2026-09-23
+
+Three fixes the first end-to-end run on a real ticket forced.
+
+- **`/validate` no longer stamps content the checks never saw.** The checks read the working tree, so
+  anything staged while they ran was never checked. The tree is now hashed after the format step and
+  re-checked at the end; if it moved, the run fails instead of stamping.
+- **`/ship` carries its own git credential** for push and fetch, and passes `GH_TOKEN` to `gh`
+  explicitly. Inherited credential helpers made both stop on an account picker that nothing in a
+  non-interactive run could answer.
+- **`/ship --post` attaches the PR to the ticket** as an external attachment, and prints a reminder to
+  paste the URL into Asana's Apps → GitHub box. That box cannot be filled with a PAT — only Asana's
+  own GitHub app or their action writes it, which `docs/design.md` now records.
+
 ## 0.5.0 — 2026-09-22
 
 - **`/ship`** — refuses unless the work is committed, validated and its API cases passed; reviews the
