@@ -2,6 +2,7 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { config, currentBranch, repoRoot, ticketForBranch } from './lib/repo.mjs';
+import { getSecret } from './lib/secrets.mjs';
 import { verifyStamp } from './lib/stamp.mjs';
 import { parseCases } from './lib/qa-cases.mjs';
 import { getTask, taskUrl } from './lib/asana.mjs';
@@ -9,6 +10,18 @@ import { buildPrBody, createPr, currentPr } from './lib/github.mjs';
 import { buildQaComment, moveToSection, postComment, setCustomFields } from './lib/asana-write.mjs';
 
 const git = (args) => execFileSync('git', args, { cwd: repoRoot(), encoding: 'utf8' }).trim();
+
+// Network git needs a credential of its own: the product remote's embedded token can be revoked or
+// stale, and a push that falls back to a prompt hangs a non-interactive run. The token is passed
+// through the environment for the life of the call and never written anywhere.
+const gitNetwork = (args) => {
+  const helper = '!f() { echo username=x-access-token; echo password=$GH_TOKEN; }; f';
+  return execFileSync('git', ['-c', `credential.helper=${helper}`, ...args], {
+    cwd: repoRoot(),
+    encoding: 'utf8',
+    env: { ...process.env, GH_TOKEN: process.env.GH_TOKEN ?? getSecret('ZAYAN_GITHUB_PAT') },
+  }).trim();
+};
 const say = (line) => process.stderr.write(`${line}\n`);
 const post = process.argv.includes('--post');
 
@@ -51,7 +64,7 @@ say(`branch ${branch} · ticket ${ticket} · ${apiCases.length} API case(s) pass
 
 // ---- the whole branch, not the last commit -----------------------------------------------------
 
-git(['fetch', '-q', 'origin', 'staging']);
+gitNetwork(['fetch', '-q', 'origin', 'staging']);
 const branchDiff = git(['diff', '--name-only', 'origin/staging...HEAD', '--', 'backend/']).split('\n').filter(Boolean);
 say(`branch diff against origin/staging: ${branchDiff.length} backend file(s)`);
 
@@ -62,7 +75,7 @@ const title = task.name.replace(/^\[TEST\]\s*/i, '').trim();
 
 if (!post) {
   say('pushing the branch');
-  git(['push', '-u', 'origin', branch]);
+  gitNetwork(['push', '-u', 'origin', branch]);
 }
 
 let pr = currentPr();
