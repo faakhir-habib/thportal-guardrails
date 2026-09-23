@@ -63,3 +63,12 @@ export const setCustomFields = (taskGid, fields, { fetchImpl = fetch, token: t }
 
 export const moveToSection = (taskGid, sectionGid, { fetchImpl = fetch, token: t } = {}) =>
   call(`/sections/${sectionGid}/addTask`, { body: { data: { task: taskGid } }, fetchImpl, token: t ?? token() });
+
+// A link in a comment scrolls away; an attachment stays at the top of the task where QA and the lead
+// look for it.
+export const attachLink = (taskGid, { url, name }, { fetchImpl = fetch, token: t } = {}) =>
+  call('/attachments', {
+    body: { data: { resource_subtype: 'external', parent: taskGid, url, name } },
+    fetchImpl,
+    token: t ?? token(),
+  });

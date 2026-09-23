@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildQaComment, postComment, setCustomFields, moveToSection } from '../scripts/lib/asana-write.mjs';
+import { attachLink, buildQaComment, postComment, setCustomFields, moveToSection } from '../scripts/lib/asana-write.mjs';
 
 const cases = [
   { id: 'QA-1', type: 'api', title: 'count excludes inactive', status: 'passed', evidence: 'GET /x -> 200' },
@@ -79,4 +79,16 @@ test('html in a case title is escaped rather than passed through', () => {
   });
   assert.doesNotMatch(c, /<script>/);
   assert.match(c, /&lt;script&gt;/);
+});
+
+test('attachLink posts an external attachment pointing at the PR', async () => {
+  const seen = [];
+  const fetchImpl = async (url, opts) => { seen.push({ url, opts }); return { ok: true, json: async () => ({ data: { gid: '1' } }) }; };
+  await attachLink('123', { url: 'https://github.com/o/r/pull/9', name: 'PR #9' }, { fetchImpl, token: 't' });
+
+  const body = JSON.parse(seen[0].opts.body).data;
+  assert.match(seen[0].url, /\/attachments$/);
+  assert.equal(body.resource_subtype, 'external');
+  assert.equal(body.parent, '123');
+  assert.equal(body.url, 'https://github.com/o/r/pull/9');
 });

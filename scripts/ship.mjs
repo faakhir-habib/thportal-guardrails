@@ -7,7 +7,7 @@ import { verifyStamp } from './lib/stamp.mjs';
 import { parseCases } from './lib/qa-cases.mjs';
 import { getTask, taskUrl } from './lib/asana.mjs';
 import { buildPrBody, createPr, currentPr } from './lib/github.mjs';
-import { buildQaComment, moveToSection, postComment, setCustomFields } from './lib/asana-write.mjs';
+import { attachLink, buildQaComment, moveToSection, postComment, setCustomFields } from './lib/asana-write.mjs';
 
 const git = (args) => execFileSync('git', args, { cwd: repoRoot(), encoding: 'utf8' }).trim();
 
@@ -16,10 +16,17 @@ const git = (args) => execFileSync('git', args, { cwd: repoRoot(), encoding: 'ut
 // through the environment for the life of the call and never written anywhere.
 const gitNetwork = (args) => {
   const helper = '!f() { echo username=x-access-token; echo password=$GH_TOKEN; }; f';
-  return execFileSync('git', ['-c', `credential.helper=${helper}`, ...args], {
+  // The empty helper first clears the inherited ones: Git Credential Manager pops an account picker
+  // on a machine with more than one GitHub login, and a dialog nobody is watching is a hang.
+  return execFileSync('git', ['-c', 'credential.helper=', '-c', `credential.helper=${helper}`, ...args], {
     cwd: repoRoot(),
     encoding: 'utf8',
-    env: { ...process.env, GH_TOKEN: process.env.GH_TOKEN ?? getSecret('ZAYAN_GITHUB_PAT') },
+    env: {
+      ...process.env,
+      GH_TOKEN: process.env.GH_TOKEN ?? getSecret('ZAYAN_GITHUB_PAT'),
+      GIT_TERMINAL_PROMPT: '0',
+      GCM_INTERACTIVE: 'never',
+    },
   }).trim();
 };
 const say = (line) => process.stderr.write(`${line}\n`);
@@ -181,6 +188,8 @@ if (failedCases.length) stop(`${failedCases.length} API case(s) failed — the t
 try {
   await postComment(ticket, comment);
   say('posted the comment');
+  await attachLink(ticket, { url: pr.url, name: `PR #${pr.number} - ${title}` });
+  say(`attached PR #${pr.number} to the task`);
   await setCustomFields(ticket, fields);
   say('set Branch name, Preview Url and Backend Status');
   await moveToSection(ticket, section);

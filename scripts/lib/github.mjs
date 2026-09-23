@@ -1,9 +1,16 @@
 import { execFileSync } from 'node:child_process';
 import { repoRoot } from './repo.mjs';
+import { getSecret } from './secrets.mjs';
 
 const CLAUDE = /claude|anthropic|🤖/i;
 
-const defaultRun = (args) => execFileSync('gh', args, { cwd: repoRoot(), encoding: 'utf8' }).trim();
+// gh is given the token explicitly: with more than one account in its keyring it otherwise asks
+// which one to use, and that prompt hangs a run nobody is watching.
+const defaultRun = (args) => execFileSync('gh', args, {
+  cwd: repoRoot(),
+  encoding: 'utf8',
+  env: { ...process.env, GH_TOKEN: process.env.GH_TOKEN ?? getSecret('ZAYAN_GITHUB_PAT') },
+}).trim();
 
 export function buildPrBody({ ticketUrl, summary, why = [], verification = {}, waivers = [] }) {
   const clean = (s) => String(s).replace(/.*claude.*/gi, '').replace(/.*anthropic.*/gi, '').trim();
