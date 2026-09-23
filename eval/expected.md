@@ -9,7 +9,7 @@ Two fixtures define whether the rules work. Both are real `git diff` output for 
 
 ## Pass criteria
 
-1. All 27 ids below are reported in `violations` for `bad-diff.patch`.
+1. All 28 ids below are reported in `violations` for `bad-diff.patch`.
 2. At most **2** findings outside that table. A reviewer that pads its output with noise fails the
    same way one that misses a violation does.
 3. `clean-diff.patch` returns an empty `violations` array.
@@ -46,6 +46,7 @@ Two fixtures define whether the rules work. Both are real `git diff` output for 
 | V25 | Services | `Service/PlacardPhotoService.cs` | `CalculateStorageCost` is a public service method returning a bare `Task<decimal>` instead of `Result<T>` | Return `Task<Result<decimal>>` or make it private |
 | V26 | Wiring | whole diff | A new service and repository with none of the five wiring files touched, so `_service.PlacardPhotoService` cannot resolve | Add the property, the `Lazy<>` field and initializer in all four managers, plus the `MainProfile` map |
 | V27 | DTOs | `Shared/DataTransferObjects/PlacardPhotoDto.cs` | The DTO is bound as the POST body but carries no DataAnnotations, so the validation filter has nothing to check and the length rule is hand-rolled in the service | Use a write DTO with `[Required]` and `[MaxLength(2048)]` |
+| V28 | AI-assisted features | `Service/PlacardPhotoTaggingService.cs` | `SuggestElevationAsync` returns an elevation guessed from the file name at `high` confidence without calling the model; the model is only asked when the name has no match | Always call the model; the file name may go into the prompt as a hint |
 
 ## clean-diff.patch
 

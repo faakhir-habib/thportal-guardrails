@@ -314,6 +314,21 @@ the domain language drifts, and every reader pays a small tax forever.
 - A new environment variable or configuration key is a `suggestion`, but it must be listed in the PR's
   "Why" so every environment gets it before the deploy.
 
+## AI-assisted features
+
+- **The model always makes the decision.** Deterministic code — parsing, geometry, lookups — may narrow
+  or annotate what is sent to the model and tidy what comes back, but it never skips the model call, and
+  never decides the outcome or its confidence in the model's place — `violation`. A shortcut such as
+  "every lot has one candidate, so place it without asking" is a product decision for the developer to
+  make, not an optimisation to slip into a fix.
+  **Why:** PR #2492 added "skip the AI and propose at `high`" to a legal-map bug fix without being asked;
+  it removed the model's check against the drawing, so a wrong block assignment would have gone out
+  unreviewed. The developer: "we will always make ai call to make decision."
+  See `backend/Service/LegalMap/AiLegalMapService.cs` (`RunMappingAsync` always calls
+  `RequestMatchesAsync`; `LegalMapCandidateFinder` only narrows its candidates) and
+  `backend/CollectionEmbeddingService/AIOCRService.cs` (`ExtractIdentityDetailsAsync` always asks the
+  model, then only resolves the city it returned).
+
 ## Tests
 
 Golden example: `backend/FileManager.IntegrationTests/DealLifecycleE2ETests.cs`.
@@ -350,3 +365,4 @@ Every rule added after this file was created records itself here, with the eval 
 | Date | Rule | Why it was added | Source (PR/ticket) | Eval case |
 |---|---|---|---|---|
 | 2026-09-18 | All rules in this file | Created from the guardrails design; verified against the codebase | `docs/design.md` | V1-V22 |
+| 2026-09-23 | AI-assisted features: the model always decides | A legal-map bug fix skipped the AI and set high confidence without being asked | PR #2492 / Asana 1218775067352015 | V28 |

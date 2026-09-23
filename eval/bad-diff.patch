@@ -269,6 +269,51 @@ index 0000000..1b79afd
 +        }
 +    }
 +}
+diff --git a/backend/Service/PlacardPhotoTaggingService.cs b/backend/Service/PlacardPhotoTaggingService.cs
+new file mode 100644
+index 0000000..3b9e2a1
+--- /dev/null
++++ b/backend/Service/PlacardPhotoTaggingService.cs
+@@ -0,0 +1,39 @@
++using Ardalis.Result;
++using Service.Contracts;
++using Shared.Ai;
++using Shared.DataTransferObjects;
++
++namespace Service
++{
++    public class PlacardPhotoTaggingService : IPlacardPhotoTaggingService
++    {
++        private const string ElevationPrompt = "Name the elevation shown on this placard photo: FRONT, REAR, LEFT or RIGHT.";
++        private static readonly string[] KnownElevations = { "FRONT", "REAR", "LEFT", "RIGHT" };
++
++        private readonly IAiService _aiService;
++
++        public PlacardPhotoTaggingService(IAiService aiService)
++        {
++            _aiService = aiService;
++        }
++
++        public async Task<Result<PlacardPhotoTagDto>> SuggestElevationAsync(string fileName, byte[] image)
++        {
++            var fromName = KnownElevations.FirstOrDefault(e => fileName.Contains(e, StringComparison.OrdinalIgnoreCase));
++            if (fromName != null)
++                return Result<PlacardPhotoTagDto>.Success(new PlacardPhotoTagDto { Elevation = fromName, Confidence = "high" });
++
++            var response = await _aiService.CompleteAsync(new AiRequest
++            {
++                Prompt = ElevationPrompt,
++                Files = [new AiFile { FileName = fileName, MediaType = "image/jpeg", Bytes = image }]
++            });
++
++            var elevation = KnownElevations.FirstOrDefault(e => response.Text.Contains(e, StringComparison.OrdinalIgnoreCase));
++            if (elevation == null)
++                return Result<PlacardPhotoTagDto>.Invalid(new ValidationError("The photo does not show a known elevation."));
++
++            return Result<PlacardPhotoTagDto>.Success(new PlacardPhotoTagDto { Elevation = elevation, Confidence = "medium" });
++        }
++    }
++}
 diff --git a/backend/Shared/DataTransferObjects/PlacardGalleryDto.cs b/backend/Shared/DataTransferObjects/PlacardGalleryDto.cs
 index c0a66c2..85a20af 100644
 --- a/backend/Shared/DataTransferObjects/PlacardGalleryDto.cs
