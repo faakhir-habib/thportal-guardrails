@@ -194,6 +194,11 @@ try {
   say('set Branch name, Preview Url and Backend Status');
   await moveToSection(ticket, section);
   say('moved the task to QA');
+
+  // The task's Apps → GitHub box is Asana's own widget. Only their GitHub app or their GitHub Action
+  // (with an ASANA_SECRET, and a workflow file in the product repo) can fill it — a PAT cannot.
+  say('');
+  say(`For the rich GitHub widget on the task, paste this into its Apps → GitHub box: ${pr.url}`);
   console.log(JSON.stringify({ ...payload, posted: true }, null, 2));
 } catch (error) {
   say(`Asana failed: ${error.message}`);

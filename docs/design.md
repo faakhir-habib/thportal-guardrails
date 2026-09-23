@@ -618,6 +618,9 @@ Handling rules:
 These are deliberately out of scope now. They only come up if the user later decides the team should
 adopt this rather than individual developers:
 
+- filling the task's **Apps → GitHub** widget: that box belongs to Asana's GitHub app, and only
+  their app or their GitHub Action (with an `ASANA_SECRET` and a workflow file in the product repo)
+  can write to it. `/ship` attaches the PR as a normal attachment and prints the URL to paste;
 - committing the bundle to the repo (`.gitignore`, the `prepare` script, removing the husky folders);
 - CI checks on the PR — attestation, PR body and commit-message validation;
 - branch protection and required checks on `staging`, which needs a repo admin;
