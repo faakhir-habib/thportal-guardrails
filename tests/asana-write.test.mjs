@@ -38,6 +38,25 @@ test('only tags allowed by Asana are used', () => {
   assert.match(c, /<\/body>$/);
 });
 
+test('ui cases scoped later are listed apart, not handed to QA to check now', () => {
+  const c = buildQaComment({
+    branch: 'b',
+    previewUrl: 'p',
+    prUrl: 'u',
+    reviewerGid: 'g',
+    waivers: [],
+    cases: [
+      { id: 'QA-1', type: 'ui', title: 'now', steps: ['do now'] },
+      { id: 'QA-2', type: 'ui', title: 'afterwards', scope: 'later', steps: ['do later'] },
+    ],
+  });
+  const [now, later] = c.split('Later on this ticket');
+  assert.match(now, /QA-1 now: do now/);
+  assert.doesNotMatch(now, /QA-2/);
+  assert.match(later, /QA-2 afterwards/);
+  assert.doesNotMatch(later, /do later/);
+});
+
 test('a failing case is called out rather than buried', () => {
   const c = buildQaComment({
     branch: 'b',

@@ -16,7 +16,8 @@ async function call(path, { method = 'POST', body, fetchImpl = fetch, token }) {
 // Asana accepts a small tag set inside <body> and rejects <p> and <br>; plain newlines survive.
 export function buildQaComment({ branch, previewUrl, prUrl, cases = [], waivers = [], reviewerGid }) {
   const api = cases.filter((c) => c.type === 'api');
-  const ui = cases.filter((c) => c.type === 'ui');
+  const ui = cases.filter((c) => c.type === 'ui' && c.scope !== 'later');
+  const laterUi = cases.filter((c) => c.type === 'ui' && c.scope === 'later');
   const failed = api.filter((c) => c.status === 'failed');
 
   const lines = ['<body><strong>Ready for QA</strong>', ''];
@@ -38,6 +39,12 @@ export function buildQaComment({ branch, previewUrl, prUrl, cases = [], waivers 
   if (ui.length) {
     lines.push('<strong>For QA to check</strong>', '<ul>');
     for (const c of ui) lines.push(`<li>${escape(c.id)} ${escape(c.title)}: ${escape((c.steps ?? []).join(' → '))}</li>`);
+    lines.push('</ul>');
+  }
+
+  if (laterUi.length) {
+    lines.push('<strong>Later on this ticket</strong> (not testable in this PR)', '<ul>');
+    for (const c of laterUi) lines.push(`<li>${escape(c.id)} ${escape(c.title)}</li>`);
     lines.push('</ul>');
   }
 
