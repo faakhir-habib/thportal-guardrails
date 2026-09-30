@@ -14,7 +14,13 @@ export const repoRoot = () => resolve(bundleRoot(), '..', '..');
 export const stagedFiles = (cwd = repoRoot()) =>
   git(['diff', '--cached', '--name-only'], cwd).split('\n').filter(Boolean);
 
-export const touchesBackend = (files) => files.some((f) => f.startsWith('backend/'));
+export const branchFiles = (base = 'origin/staging', cwd = repoRoot()) =>
+  git(['diff', '--name-only', `${base}...HEAD`], cwd).split('\n').filter(Boolean);
+
+export const trackedChanges = (cwd = repoRoot()) =>
+  git(['status', '--porcelain'], cwd).split('\n').filter((l) => l && !l.startsWith('??'));
+
+export const touchesBackend =(files) => files.some((f) => f.startsWith('backend/'));
 export const touchesFrontend = (files) => files.some((f) => f.startsWith('frontend/'));
 
 export const writeTree = (cwd = repoRoot()) => git(['write-tree'], cwd);

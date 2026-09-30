@@ -99,3 +99,15 @@ Give the developer:
 
 If the commit is still refused after a passing stamp, the staged content changed after the stamp was
 written. Re-stage and validate again.
+
+## After merging staging into the branch
+
+A merge commit passes the commit gate, but `/ship` needs a stamp for what HEAD now holds — code nobody
+has built together yet. With a clean working tree, add `--committed` to both calls: the checks and the
+review cover the branch's own files against `origin/staging`, and the stamp is keyed to HEAD.
+
+```bash
+node .claude/guardrails/scripts/validate.mjs --committed
+git diff origin/staging...HEAD -- backend/ > "$SCRATCH/branch.diff"   # review this one
+node .claude/guardrails/scripts/validate.mjs --committed --stamp "$SCRATCH/review.json"
+```

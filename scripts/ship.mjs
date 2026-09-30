@@ -52,7 +52,15 @@ if (!ticket) stop('this branch is not linked to a ticket', `run /ticket, or: git
 
 const headTree = git(['rev-parse', 'HEAD^{tree}']);
 const stamp = verifyStamp(headTree);
-if (!stamp.ok) stop(`the committed content is not validated — ${stamp.reason}`, 'run /validate, then commit again');
+if (!stamp.ok) {
+  const afterMerge = git(['rev-list', '--parents', '-n', '1', 'HEAD']).split(' ').length > 2;
+  stop(
+    `the committed content is not validated — ${stamp.reason}`,
+    afterMerge
+      ? 'HEAD is a merge: run node .claude/guardrails/scripts/validate.mjs --committed, then again with --stamp <review.json>'
+      : 'run /validate, then commit again',
+  );
+}
 
 const workDir = join(repoRoot(), '.claude', 'work', ticket);
 const casesPath = join(workDir, 'qa-cases.json');

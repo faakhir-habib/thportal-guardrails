@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { join } from 'node:path';
-import { currentBranch, repoRoot, stagedFiles, ticketForBranch, touchesBackend, writeTree } from './lib/repo.mjs';
+import { branchFiles, currentBranch, repoRoot, stagedFiles, ticketForBranch, touchesBackend, trackedChanges, writeTree } from './lib/repo.mjs';
 import { buildBackend, dockerRunning, formatAndRestage, testBackend } from './lib/checks.mjs';
 import { rulesHash, writeStamp } from './lib/stamp.mjs';
 
@@ -27,10 +27,20 @@ const cacheChecks = (tree, payload) => {
 
 const cachedChecks = (tree) => (existsSync(cachePath(tree)) ? JSON.parse(readFileSync(cachePath(tree), 'utf8')) : null);
 
-const files = stagedFiles();
+// --committed validates what HEAD already holds. A merge from staging creates content no staged run
+// ever saw, and /ship needs a stamp for exactly that content, so it is checked here as committed.
+const committed = args.includes('--committed');
+
+if (committed && trackedChanges().length) {
+  console.log(JSON.stringify({ result: 'fail', reason: '--committed needs a clean working tree, so what is checked is what HEAD holds' }, null, 2));
+  process.exit(1);
+}
+
+const files = committed ? branchFiles() : stagedFiles();
 
 if (!touchesBackend(files)) {
-  console.log(JSON.stringify({ result: 'skip', reason: 'no backend files staged' }, null, 2));
+  const reason = committed ? 'the branch changes no backend files against origin/staging' : 'no backend files staged';
+  console.log(JSON.stringify({ result: 'skip', reason }, null, 2));
   process.exit(0);
 }
 
