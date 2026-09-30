@@ -29,7 +29,7 @@
   },
   "qa": {
     "baseUrl": "http://localhost:5237",
-    "bootTimeoutMs": 180000,
+    "bootTimeoutMs": 420000,
     "login": {
       "path": "/api/v2/authentication/login",
       "email": "devdevelopment@zayantechnologies.com",
